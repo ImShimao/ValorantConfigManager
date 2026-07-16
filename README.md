@@ -54,11 +54,17 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
 
 ## Développement
 
-- `main.py` — application (Python 3 + CustomTkinter)
+Python 3 + CustomTkinter, découpé en modules :
+
+- `main.py` — point d'entrée (arguments, langue, lancement)
+- `app.py` — fenêtre principale
+- `core.py` — logique sans interface : comptes, profils, sauvegardes, archives
 - `riot_cloud.py` — accès local au client Riot + service player-preferences
   (serveurs `player-preferences-*.pp.sgp.pvp.net`, trouvés via la config publique
   du client Riot ; l'ancien `playerpreferences.riotgames.com` est mort)
-- `make_icon.py` — génère `icon.ico`
+- `dialogs.py` — boîtes de dialogue personnalisées
+- `theme.py` — couleurs, polices, icônes · `i18n.py` — langue FR/EN ·
+  `appinfo.py` — métadonnées · `make_icon.py` — génère `icon.ico`
 - Dépendances : `pip install -r requirements.txt` (dev : `-r requirements-dev.txt`)
 - Tests : `python -m pytest` (logique pure, sans interface ni données réelles)
 - Build : `python -m PyInstaller --noconfirm --onefile --windowed --name ValorantConfigManager --icon icon.ico --add-data "icon.ico;." --collect-all customtkinter main.py`
