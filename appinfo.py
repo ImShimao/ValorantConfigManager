@@ -5,9 +5,10 @@ import sys
 from pathlib import Path
 
 APP_NAME = "Valorant Config Manager"
-APP_VERSION = "1.4.3"
+APP_VERSION = "1.5.0"
 APP_ID = "VCM.ValorantConfigManager"
 PROFILE_EXT = ".vcmprofile"
+GITHUB_URL = "https://github.com/ImShimao/ValorantConfigManager"
 
 
 def resource_path(name: str) -> Path:

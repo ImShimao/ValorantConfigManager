@@ -3,7 +3,7 @@
 ; Produit : Output\ValorantConfigManager-Setup-{version}.exe
 
 #define MyAppName "Valorant Config Manager"
-#define MyAppVersion "1.4.3"
+#define MyAppVersion "1.5.0"
 #define MyAppExeName "ValorantConfigManager.exe"
 
 [Setup]

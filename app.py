@@ -3,10 +3,12 @@
 
 import ctypes
 import json
+import os
 import re
 import shutil
 import threading
 import uuid
+import webbrowser
 import zipfile
 from pathlib import Path
 
@@ -17,15 +19,17 @@ from PIL import Image
 import i18n
 import riot_cloud
 import theme
-from appinfo import APP_ID, APP_NAME, APP_VERSION, PROFILE_EXT, resource_path
-from core import (VALO_CONFIG_DIR, BACKUPS_DIR, PROFILES_DIR, apply_files,
-                  backup_account, backup_cloud_only, cloud_settings_map,
-                  create_profile, ensure_dirs, extract_profile_archive,
-                  fmt_date, folder_for_puuid, is_valorant_running,
-                  keybind_map, list_accounts, list_backups, list_profiles,
-                  load_account_names, load_settings, profile_summary,
-                  read_profile_cloud, save_account_names, save_settings,
-                  short_id, write_profile_archive)
+from appinfo import (APP_ID, APP_NAME, APP_VERSION, GITHUB_URL, PROFILE_EXT,
+                     resource_path)
+from core import (VALO_CONFIG_DIR, BACKUPS_DIR, DATA_DIR, PROFILES_DIR,
+                  apply_files, backup_account, backup_cloud_only,
+                  cloud_settings_map, create_profile, ensure_dirs,
+                  extract_profile_archive, fmt_date, folder_for_puuid,
+                  is_valorant_running, keybind_map, list_accounts,
+                  list_backups, list_profiles, load_account_names,
+                  load_settings, profile_summary, read_profile_cloud,
+                  save_account_names, save_settings, short_id,
+                  write_profile_archive)
 from dialogs import ChoiceDialog, TextDialog
 from i18n import T
 from riot_cloud import RiotClientError
@@ -113,12 +117,6 @@ class App(ctk.CTk):
 
         right = ctk.CTkFrame(header, fg_color="transparent")
         right.pack(side="right", padx=20)
-        ctk.CTkButton(right, text="EN" if i18n.LANG == "fr" else "FR", width=70, height=34,
-                      image=icon("globe", 15), compound="left", corner_radius=8,
-                      fg_color=C_CARD, hover_color=C_CARD_HOVER, text_color=C_TEXT,
-                      border_width=1, border_color=C_BORDER,
-                      font=(theme.FONT_UI, 12, "bold"),
-                      command=self._switch_lang).pack(side="right", padx=(10, 0))
         ctk.CTkButton(right, text=T(" Actualiser", " Refresh"), width=124, height=34,
                       image=icon("refresh", 15), compound="left", corner_radius=8,
                       fg_color=C_CARD, hover_color=C_CARD_HOVER, text_color=C_TEXT,
@@ -172,16 +170,37 @@ class App(ctk.CTk):
             segmented_button_selected_hover_color=C_RED_HOVER,
             segmented_button_unselected_color=C_PANEL,
             segmented_button_unselected_hover_color=C_CARD_HOVER,
-            text_color=C_TEXT)
+            text_color=C_TEXT, command=self._on_tab_change)
         self.tabs.pack(fill="both", expand=True, padx=16, pady=(4, 6))
-        tab_main = self.tabs.add(T("  Gestion  ", "  Manage  "))
-        tab_help = self.tabs.add(T("  Aide  ", "  Help  "))
+        name_manage = T("  Gestion  ", "  Manage  ")
+        name_help = T("  Aide  ", "  Help  ")
+        name_settings = T("  Paramètres  ", "  Settings  ")
+        tab_main = self.tabs.add(name_manage)
+        tab_help = self.tabs.add(name_help)
+        tab_settings = self.tabs.add(name_settings)
         try:
             self.tabs._segmented_button.configure(font=(theme.FONT_TITLE, 14))
         except Exception:
             pass
-        self._build_help(tab_help)
 
+        # Construction paresseuse : seul l'onglet Gestion est bâti tout de suite.
+        # Aide et Paramètres (nombreux widgets) ne sont montés qu'à la première
+        # ouverture — moins de widgets vivants = changement d'onglet fluide.
+        self._lazy_tabs = {
+            name_help: (tab_help, self._build_help),
+            name_settings: (tab_settings, self._build_settings),
+        }
+
+        self._build_manage(tab_main)
+
+    def _on_tab_change(self):
+        name = self.tabs.get()
+        builder = self._lazy_tabs.pop(name, None)
+        if builder is not None:
+            frame, build = builder
+            build(frame)
+
+    def _build_manage(self, tab_main):
         body = ctk.CTkFrame(tab_main, fg_color="transparent")
         body.pack(fill="both", expand=True)
         body.grid_columnconfigure(0, weight=11, uniform="col")
@@ -441,6 +460,118 @@ class App(ctk.CTk):
              "Only your settings (crosshair, sensitivity, keybinds, video). Never credentials "
              "or session tokens."))
 
+    def _build_settings(self, parent):
+        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+        scroll.pack(fill="both", expand=True)
+
+        def card(icon_name: str, title: str):
+            c = ctk.CTkFrame(scroll, fg_color=C_PANEL, corner_radius=14,
+                             border_width=1, border_color=C_BORDER)
+            c.pack(fill="x", padx=4, pady=(0, 12))
+            ctk.CTkLabel(c, image=icon(icon_name, 17, C_RED), compound="left",
+                         text="  " + title.upper(), font=(theme.FONT_TITLE, 15),
+                         text_color=C_RED).pack(anchor="w", padx=18, pady=(12, 2))
+            body = ctk.CTkFrame(c, fg_color="transparent")
+            body.pack(fill="x", padx=18, pady=(2, 14))
+            return body
+
+        def toggle_row(parent_, key: str, default: bool, label: str, desc: str):
+            row = ctk.CTkFrame(parent_, fg_color="transparent")
+            row.pack(fill="x", pady=5)
+            texts = ctk.CTkFrame(row, fg_color="transparent")
+            texts.pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(texts, text=label, font=(theme.FONT_UI, 13, "bold"),
+                         text_color=C_TEXT, anchor="w").pack(anchor="w", fill="x")
+            ctk.CTkLabel(texts, text=desc, font=(theme.FONT_UI, 11),
+                         text_color=C_TEXT_DIM, anchor="w", justify="left",
+                         wraplength=620).pack(anchor="w", fill="x")
+            var = ctk.BooleanVar(value=self._setting(key, default))
+            ctk.CTkSwitch(row, text="", variable=var, width=44,
+                          progress_color=C_RED, button_color=C_TEXT,
+                          command=lambda k=key, v=var: self._save_toggle(k, v)).pack(
+                side="right", padx=(12, 0))
+
+        # --- Langue ------------------------------------------------------------
+        body = card("globe", T("Langue", "Language"))
+        ctk.CTkLabel(body, text=T("Langue de l'interface :", "Interface language:"),
+                     font=(theme.FONT_UI, 12), text_color=C_TEXT_DIM).pack(
+            anchor="w", pady=(0, 6))
+        lang_var = ctk.StringVar(value="Français" if i18n.LANG == "fr" else "English")
+        ctk.CTkSegmentedButton(
+            body, values=["Français", "English"], variable=lang_var,
+            selected_color=C_RED, selected_hover_color=C_RED_HOVER,
+            unselected_color=C_CARD, unselected_hover_color=C_CARD_HOVER,
+            fg_color=C_BG, text_color=C_TEXT, font=(theme.FONT_UI, 12, "bold"),
+            command=lambda v: self._set_lang("fr" if v == "Français" else "en",
+                                             return_to_settings=True)).pack(anchor="w")
+
+        # --- Comportement ------------------------------------------------------
+        body = card("bolt", T("Comportement", "Behavior"))
+        toggle_row(body, "close_to_tray", True,
+                   T("Réduire dans la barre système à la fermeture",
+                     "Minimize to system tray on close"),
+                   T("Fermer la fenêtre garde l'appli active près de l'horloge pour "
+                     "surveiller les connexions. Décoché : la croix quitte l'appli.",
+                     "Closing the window keeps the app running near the clock to watch "
+                     "logins. Unchecked: the close button quits the app."))
+        toggle_row(body, "auto_snapshot", True,
+                   T("Instantanés automatiques", "Automatic snapshots"),
+                   T("Prend une sauvegarde silencieuse (fichiers + cloud) du compte "
+                     "connecté une fois par session.",
+                     "Takes a silent backup (files + cloud) of the logged in account "
+                     "once per session."))
+        toggle_row(body, "login_banner", True,
+                   T("Alerte de changement de compte",
+                     "Account-change alert"),
+                   T("Affiche une bannière (et une notification) quand un autre compte "
+                     "se connecte au client Riot.",
+                     "Shows a banner (and a notification) when another account logs into "
+                     "the Riot Client."))
+
+        # --- Données -----------------------------------------------------------
+        body = card("restore", T("Données", "Data"))
+        ctk.CTkLabel(body, text=T("Profils et sauvegardes sont stockés dans :",
+                                  "Profiles and backups are stored in:"),
+                     font=(theme.FONT_UI, 12), text_color=C_TEXT_DIM).pack(
+            anchor="w")
+        ctk.CTkLabel(body, text=str(DATA_DIR), font=("Consolas", 11),
+                     text_color=C_TEXT).pack(anchor="w", pady=(0, 8))
+        ctk.CTkButton(body, text=T(" Ouvrir le dossier", " Open folder"),
+                      image=icon("import", 14), compound="left",
+                      width=190, height=30, corner_radius=8,
+                      fg_color=C_CARD, hover_color=C_CARD_HOVER, text_color=C_TEXT,
+                      border_width=1, border_color=C_BORDER,
+                      font=(theme.FONT_UI, 12),
+                      command=self._open_data_folder).pack(anchor="w")
+
+        # --- À propos ----------------------------------------------------------
+        body = card("help", T("À propos", "About"))
+        ctk.CTkLabel(body, text=f"{APP_NAME}  v{APP_VERSION}",
+                     font=(theme.FONT_UI, 13, "bold"), text_color=C_TEXT).pack(anchor="w")
+        ctk.CTkLabel(body,
+                     text=T("Transfert de configs Valorant entre comptes Riot.",
+                            "Transfer Valorant configs between Riot accounts."),
+                     font=(theme.FONT_UI, 12), text_color=C_TEXT_DIM).pack(
+            anchor="w", pady=(0, 8))
+        ctk.CTkButton(body, text=" GitHub", image=icon("globe", 14), compound="left",
+                      width=150, height=30, corner_radius=8,
+                      fg_color=C_CARD, hover_color=C_CARD_HOVER, text_color=C_TEXT,
+                      border_width=1, border_color=C_BORDER,
+                      font=(theme.FONT_UI, 12),
+                      command=lambda: webbrowser.open(GITHUB_URL)).pack(anchor="w")
+
+    def _save_toggle(self, key: str, var):
+        self.settings[key] = bool(var.get())
+        save_settings(self.settings)
+
+    def _open_data_folder(self):
+        try:
+            ensure_dirs()
+            os.startfile(str(DATA_DIR))  # noqa: S606 (Windows, chemin interne)
+        except OSError as e:
+            messagebox.showerror(APP_NAME, T(f"Impossible d'ouvrir le dossier :\n{e}",
+                                             f"Could not open the folder:\n{e}"))
+
     def _build_statusbar(self):
         bar = ctk.CTkFrame(self, fg_color=C_PANEL, corner_radius=0, height=40)
         bar.pack(fill="x", side="bottom")
@@ -470,14 +601,23 @@ class App(ctk.CTk):
     def set_status(self, text: str, color: str = C_TEXT_DIM):
         self.status.configure(text=text, text_color=color)
 
-    def _switch_lang(self):
-        i18n.set_lang("en" if i18n.LANG == "fr" else "fr")
+    def _set_lang(self, lang: str, return_to_settings: bool = False):
+        if lang == i18n.LANG:
+            return
+        i18n.set_lang(lang)
         self.settings["lang"] = i18n.LANG
         save_settings(self.settings)
         self._build_ui()
         self.refresh()
         self._update_status_ui(self._last_game_running, self.connected_riot_id,
                                self.connected_subject)
+        if return_to_settings:
+            # Rester sur l'onglet Paramètres après la reconstruction de l'UI.
+            self.tabs.set(T("  Paramètres  ", "  Settings  "))
+            self._on_tab_change()
+
+    def _setting(self, key: str, default):
+        return self.settings.get(key, default)
 
     # ------------------------------------------------------------ Rendu -----
     def refresh(self):
@@ -1473,7 +1613,7 @@ class App(ctk.CTk):
         self.focus_force()
 
     def _on_close_window(self):
-        if self.tray is None:
+        if self.tray is None or not self._setting("close_to_tray", True):
             self.destroy()
             return
         self.withdraw()
@@ -1549,7 +1689,7 @@ class App(ctk.CTk):
                 changed = True
             # Détection de changement de compte (pas au premier compte vu)
             if (self._last_seen_subject and subject != self._last_seen_subject
-                    and self.profiles):
+                    and self.profiles and self._setting("login_banner", True)):
                 if self.state() == "withdrawn" and self.tray is not None:
                     try:
                         self.tray.notify(
@@ -1561,7 +1701,8 @@ class App(ctk.CTk):
             if subject != self._last_seen_subject:
                 self._last_seen_subject = subject
             # Historique automatique : un instantané par compte et par session
-            if folder and subject not in self._snapshotted and not game_running:
+            if (folder and subject not in self._snapshotted and not game_running
+                    and self._setting("auto_snapshot", True)):
                 self._snapshotted.add(subject)
                 threading.Thread(target=self._auto_snapshot,
                                  args=(folder,), daemon=True).start()

@@ -61,11 +61,21 @@ GLYPHS = {
     "close": "", "globe": "", "user": "", "check": "", "help": "",
 }
 _icon_cache: dict = {}
+_font_cache: dict = {}
 _icon_font_path = None
 for _f in _ICON_FONT_FILES:
     if _f.is_file():
         _icon_font_path = str(_f)
         break
+
+
+def _icon_font(px: int):
+    """Police d'icônes à la taille demandée, chargée une seule fois par taille."""
+    f = _font_cache.get(px)
+    if f is None:
+        f = ImageFont.truetype(_icon_font_path, px)
+        _font_cache[px] = f
+    return f
 
 
 def icon(name: str, size: int = 15, color: str = C_TEXT):
@@ -77,7 +87,7 @@ def icon(name: str, size: int = 15, color: str = C_TEXT):
         return _icon_cache[key]
     try:
         big = size * 4
-        font = ImageFont.truetype(_icon_font_path, int(big * 0.9))
+        font = _icon_font(int(big * 0.9))
         img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
         ImageDraw.Draw(img).text((big / 2, big / 2), GLYPHS[name],
                                  font=font, fill=color, anchor="mm")

@@ -50,7 +50,9 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
   (double-clic pour rouvrir, clic droit → Quitter).
 - 📁 **Double-clic sur un `.vcmprofile`** : l'extension est associée automatiquement,
   le fichier s'importe tout seul.
-- 🌐 **Bilingue** : bouton FR/EN dans l'en-tête.
+- ⚙️ **Onglet Paramètres** : langue FR/EN, réglages de comportement (barre système,
+  instantanés automatiques, alerte de changement de compte), accès au dossier de
+  données, à propos.
 
 ## Développement
 

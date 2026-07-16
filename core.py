@@ -156,6 +156,31 @@ def read_profile_cloud(profile_path: Path) -> dict | None:
         return None
 
 
+# Cache (cloud.json brut, blob décodé) par profil, invalidé au changement de
+# mtime. Le décodage (base64 + zlib + json) était refait 3 fois par profil lors
+# d'une comparaison ; on ne le fait plus qu'une fois.
+_parsed_cloud_cache: dict = {}
+
+
+def load_parsed_cloud(profile_path: Path):
+    """(cloud_dict, réglages_décodés) d'un profil, ou (None, None). Avec cache."""
+    cloud_file = Path(profile_path) / "cloud.json"
+    try:
+        mtime = cloud_file.stat().st_mtime
+    except OSError:
+        return None, None
+    key = str(cloud_file)
+    cached = _parsed_cloud_cache.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1], cached[2]
+    cloud = read_profile_cloud(profile_path)
+    parsed = None
+    if cloud:
+        parsed = riot_cloud.decode_settings_blob((cloud.get("settings") or {}).get("data", ""))
+    _parsed_cloud_cache[key] = (mtime, cloud, parsed)
+    return cloud, parsed
+
+
 def _rotate_backups(parent: Path):
     """Rotation : on garde les N sauvegardes les plus récentes."""
     backups = sorted([d for d in parent.iterdir() if d.is_dir()], reverse=True)
@@ -253,27 +278,25 @@ def profile_summary(prof: dict) -> dict:
     """Résumé comparable d'un profil : sensi, crosshairs, touches, vidéo..."""
     s = {"cloud": prof.get("has_cloud", False)}
     s.update(parse_video_settings(prof["path"]))
-    cloud = read_profile_cloud(prof["path"])
-    if cloud:
-        parsed = riot_cloud.decode_settings_blob((cloud.get("settings") or {}).get("data", ""))
-        if parsed:
-            floats = {x["settingEnum"]: x["value"] for x in parsed.get("floatSettings", [])}
-            if "EAresFloatSettingName::MouseSensitivity" in floats:
-                s["sens"] = round(floats["EAresFloatSettingName::MouseSensitivity"], 4)
-            if "EAresFloatSettingName::MouseSensitivityZoomed" in floats:
-                s["ads"] = round(floats["EAresFloatSettingName::MouseSensitivityZoomed"], 4)
-            strings = {x["settingEnum"]: x["value"] for x in parsed.get("stringSettings", [])}
-            xr = strings.get("EAresStringSettingName::SavedCrosshairProfileData")
-            if xr:
-                try:
-                    xd = json.loads(xr)
-                    s["crosshairs"] = [p.get("profileName") or "?" for p in xd.get("profiles", [])]
-                except json.JSONDecodeError:
-                    pass
-            s["keybinds"] = {(m.get("name"), m.get("key"), m.get("alt"))
-                             for m in parsed.get("actionMappings", [])}
-            s["n_settings"] = (len(parsed.get("boolSettings", [])) + len(floats)
-                               + len(parsed.get("intSettings", [])))
+    _, parsed = load_parsed_cloud(prof["path"])
+    if parsed:
+        floats = {x["settingEnum"]: x["value"] for x in parsed.get("floatSettings", [])}
+        if "EAresFloatSettingName::MouseSensitivity" in floats:
+            s["sens"] = round(floats["EAresFloatSettingName::MouseSensitivity"], 4)
+        if "EAresFloatSettingName::MouseSensitivityZoomed" in floats:
+            s["ads"] = round(floats["EAresFloatSettingName::MouseSensitivityZoomed"], 4)
+        strings = {x["settingEnum"]: x["value"] for x in parsed.get("stringSettings", [])}
+        xr = strings.get("EAresStringSettingName::SavedCrosshairProfileData")
+        if xr:
+            try:
+                xd = json.loads(xr)
+                s["crosshairs"] = [p.get("profileName") or "?" for p in xd.get("profiles", [])]
+            except json.JSONDecodeError:
+                pass
+        s["keybinds"] = {(m.get("name"), m.get("key"), m.get("alt"))
+                         for m in parsed.get("actionMappings", [])}
+        s["n_settings"] = (len(parsed.get("boolSettings", [])) + len(floats)
+                           + len(parsed.get("intSettings", [])))
     return s
 
 
@@ -283,10 +306,7 @@ _SKIP_ENUMS = {"SavedCrosshairProfileData", "LastSeenAdHocPopup", "LastSeenSeaso
 
 def cloud_settings_map(prof: dict) -> dict | None:
     """Tous les réglages cloud d'un profil : {nom_court: valeur}, ou None."""
-    cloud = read_profile_cloud(prof["path"])
-    if not cloud:
-        return None
-    parsed = riot_cloud.decode_settings_blob((cloud.get("settings") or {}).get("data", ""))
+    _, parsed = load_parsed_cloud(prof["path"])
     if not parsed:
         return None
     out = {}
@@ -304,10 +324,7 @@ def cloud_settings_map(prof: dict) -> dict | None:
 
 def keybind_map(prof: dict) -> dict | None:
     """Touches par action : {action: 'touche1 / touche2'}, ou None."""
-    cloud = read_profile_cloud(prof["path"])
-    if not cloud:
-        return None
-    parsed = riot_cloud.decode_settings_blob((cloud.get("settings") or {}).get("data", ""))
+    _, parsed = load_parsed_cloud(prof["path"])
     if not parsed:
         return None
     binds = {}
