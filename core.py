@@ -213,8 +213,13 @@ def backup_cloud_only(subject: str, cloud: dict) -> Path:
 
 
 def apply_files(src_files: Path, account_dir: Path):
-    """Copie le contenu de src_files vers le dossier du compte (écrase les fichiers)."""
-    shutil.copytree(src_files, account_dir, dirs_exist_ok=True)
+    """Copie le contenu de src_files vers le dossier du compte (écrase les fichiers).
+
+    cloud.json est ignoré : il n'a rien à faire dans le dossier de config
+    Valorant. Ça protège le cas des sauvegardes legacy v1.0, où les fichiers
+    étaient à la racine du dossier de sauvegarde, à côté du cloud.json."""
+    shutil.copytree(src_files, account_dir, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("cloud.json"))
 
 
 def list_backups(account_folder_name: str):

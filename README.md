@@ -7,6 +7,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/github/v/release/ImShimao/ValorantConfigManager?color=ff4655&label=version" alt="Version">
+  <img src="https://github.com/ImShimao/ValorantConfigManager/actions/workflows/tests.yml/badge.svg" alt="Tests">
   <img src="https://img.shields.io/github/license/ImShimao/ValorantConfigManager?color=ff4655" alt="Licence">
   <img src="https://img.shields.io/github/downloads/ImShimao/ValorantConfigManager/total?color=ff4655" alt="Téléchargements">
   <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0f1923" alt="Windows">

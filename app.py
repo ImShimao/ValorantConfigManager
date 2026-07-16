@@ -30,7 +30,7 @@ from core import (VALO_CONFIG_DIR, BACKUPS_DIR, DATA_DIR, PROFILES_DIR,
                   load_settings, profile_summary, read_profile_cloud,
                   save_account_names, save_settings, short_id,
                   write_profile_archive)
-from dialogs import ChoiceDialog, TextDialog
+from dialogs import ChoiceDialog, TextDialog, place_over
 from i18n import T
 from logutil import log
 from riot_cloud import RiotClientError
@@ -1309,15 +1309,7 @@ class App(ctk.CTk):
                       command=dlg.destroy).pack(side="right")
 
         render_rows()
-        dlg.update_idletasks()
-        x = self.winfo_rootx() + (self.winfo_width() - dlg.winfo_width()) // 2
-        y = self.winfo_rooty() + (self.winfo_height() - dlg.winfo_height()) // 2
-        dlg.geometry(f"+{max(x, 0)}+{max(y, 0)}")
-        dlg.bind("<Escape>", lambda e: dlg.destroy())
-        try:
-            dlg.after(220, lambda: dlg.iconbitmap(str(resource_path("icon.ico"))))
-        except Exception:
-            pass
+        place_over(dlg, self)
 
     def rename_profile(self, prof: dict):
         name = TextDialog(self, T("Renommer le profil", "Rename profile"),
@@ -1395,15 +1387,7 @@ class App(ctk.CTk):
         ctk.CTkButton(dlg, text=T("Fermer", "Close"), width=120, fg_color=C_RED,
                       hover_color=C_RED_HOVER, font=(theme.FONT_UI, 12, "bold"),
                       command=dlg.destroy).pack(pady=(14, 18))
-        dlg.update_idletasks()
-        x = self.winfo_rootx() + (self.winfo_width() - dlg.winfo_width()) // 2
-        y = self.winfo_rooty() + (self.winfo_height() - dlg.winfo_height()) // 2
-        dlg.geometry(f"+{max(x, 0)}+{max(y, 0)}")
-        dlg.bind("<Escape>", lambda e: dlg.destroy())
-        try:
-            dlg.after(220, lambda: dlg.iconbitmap(str(resource_path("icon.ico"))))
-        except Exception:
-            pass
+        place_over(dlg, self)
 
     def export_profile(self, prof: dict):
         safe = re.sub(r'[\\/:*?"<>|]', "_", prof["name"]).strip() or "profil"

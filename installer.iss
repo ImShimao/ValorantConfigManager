@@ -3,7 +3,10 @@
 ; Produit : Output\ValorantConfigManager-Setup-{version}.exe
 
 #define MyAppName "Valorant Config Manager"
-#define MyAppVersion "1.5.1"
+; Version lue depuis le fichier VERSION (source unique, partagée avec appinfo.py)
+#define VerHandle FileOpen(AddBackslash(SourcePath) + "VERSION")
+#define MyAppVersion Trim(FileRead(VerHandle))
+#expr FileClose(VerHandle)
 #define MyAppExeName "ValorantConfigManager.exe"
 
 [Setup]

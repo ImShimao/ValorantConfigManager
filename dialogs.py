@@ -8,20 +8,30 @@ from appinfo import resource_path
 from i18n import T
 from theme import C_BG, C_CARD, C_CARD_HOVER, C_PANEL, C_RED, C_RED_HOVER, C_TEXT
 
+
+def place_over(win, master, on_escape=None):
+    """Centre `win` sur `master`, lie la touche Échap et rétablit l'icône.
+
+    Factorisé et réutilisé par toutes les boîtes de dialogue : un CTkToplevel
+    n'hérite pas de l'icône de la fenêtre principale, et CustomTkinter la
+    réécrit ~200 ms après l'ouverture — d'où le `after(220, ...)`."""
+    win.update_idletasks()
+    x = master.winfo_rootx() + (master.winfo_width() - win.winfo_width()) // 2
+    y = master.winfo_rooty() + (master.winfo_height() - win.winfo_height()) // 2
+    win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+    win.bind("<Escape>", lambda e: (on_escape or win.destroy)())
+    try:
+        win.after(220, lambda: win.iconbitmap(str(resource_path("icon.ico"))))
+    except Exception:
+        pass
+
+
 # ----------------------------------------------------------------------------
 # Boîtes de dialogue personnalisées
 # ----------------------------------------------------------------------------
 class _Dialog(ctk.CTkToplevel):
     def _finish_setup(self, master):
-        self.update_idletasks()
-        x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
-        y = master.winfo_rooty() + (master.winfo_height() - self.winfo_height()) // 2
-        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
-        self.bind("<Escape>", lambda e: self._cancel())
-        try:
-            self.after(220, lambda: self.iconbitmap(str(resource_path("icon.ico"))))
-        except Exception:
-            pass
+        place_over(self, master, on_escape=self._cancel)
 
     def _cancel(self):
         self.result = None
