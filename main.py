@@ -25,10 +25,13 @@ import single_instance
 from app import App
 from appinfo import PROFILE_EXT
 from core import ensure_dirs, load_settings, register_file_association
+from logutil import log, setup_logging
 
 
 def main():
     ensure_dirs()
+    setup_logging()
+    log.info("Démarrage %s", " ".join(sys.argv[1:]) or "(sans argument)")
     settings = load_settings()
     i18n.set_lang(settings.get("lang", "fr"))
 

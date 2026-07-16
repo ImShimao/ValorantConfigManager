@@ -100,6 +100,8 @@ Python 3 + CustomTkinter, découpé en modules :
 - `single_instance.py` — verrou d'instance unique (socket en boucle locale)
 - `theme.py` — couleurs, polices, icônes · `i18n.py` — langue FR/EN ·
   `appinfo.py` — métadonnées · `make_icon.py` — génère `icon.ico`
+- `logutil.py` — journal dans `%LOCALAPPDATA%\ValorantConfigManager\logs\vcm.log`
+  (rotation ; capture les exceptions non rattrapées, utile pour le support)
 - Dépendances : `pip install -r requirements.txt` (dev : `-r requirements-dev.txt`)
 - Tests : `python -m pytest` (logique pure, sans interface ni données réelles)
 - Build : `python -m PyInstaller --noconfirm --onefile --windowed --name ValorantConfigManager --icon icon.ico --add-data "icon.ico;." --collect-all customtkinter --collect-all pystray main.py`

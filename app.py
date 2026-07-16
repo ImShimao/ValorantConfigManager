@@ -32,6 +32,7 @@ from core import (VALO_CONFIG_DIR, BACKUPS_DIR, DATA_DIR, PROFILES_DIR,
                   write_profile_archive)
 from dialogs import ChoiceDialog, TextDialog
 from i18n import T
+from logutil import log
 from riot_cloud import RiotClientError
 from theme import (C_BG, C_BORDER, C_CARD, C_CARD_HOVER, C_GREEN, C_ORANGE,
                    C_PANEL, C_RED, C_RED_HOVER, C_TEXT, C_TEXT_DIM, icon)
@@ -58,11 +59,16 @@ class App(ctk.CTk):
         self._banner = None
         self.tray = None
 
+        self.report_callback_exception = self._log_tk_exception
         self._build_ui()
         self.refresh()
         self._poll_status()
         self._setup_tray()
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
+
+    def _log_tk_exception(self, exc_type, exc, tb):
+        """Journalise les erreurs survenant dans les callbacks Tkinter."""
+        log.error("Erreur dans un callback Tk", exc_info=(exc_type, exc, tb))
 
     def _build_ui(self):
         for w in self.winfo_children():
@@ -251,20 +257,24 @@ class App(ctk.CTk):
         self.profiles_frame = ctk.CTkScrollableFrame(prof_panel, fg_color="transparent")
         self.profiles_frame.pack(fill="both", expand=True, padx=10, pady=(8, 12))
 
+    def _section_card(self, parent, icon_name: str, title: str):
+        """Carte de section (titre + icône rouge) ; renvoie le corps à remplir."""
+        c = ctk.CTkFrame(parent, fg_color=C_PANEL, corner_radius=14,
+                         border_width=1, border_color=C_BORDER)
+        c.pack(fill="x", padx=4, pady=(0, 12))
+        ctk.CTkLabel(c, image=icon(icon_name, 17, C_RED), compound="left",
+                     text="  " + title.upper(), font=(theme.FONT_TITLE, 15),
+                     text_color=C_RED).pack(anchor="w", padx=18, pady=(12, 2))
+        body = ctk.CTkFrame(c, fg_color="transparent")
+        body.pack(fill="x", padx=18, pady=(2, 14))
+        return body
+
     def _build_help(self, parent):
         scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
         scroll.pack(fill="both", expand=True)
 
         def card(icon_name: str, title: str):
-            c = ctk.CTkFrame(scroll, fg_color=C_PANEL, corner_radius=14,
-                             border_width=1, border_color=C_BORDER)
-            c.pack(fill="x", padx=4, pady=(0, 12))
-            ctk.CTkLabel(c, image=icon(icon_name, 17, C_RED), compound="left",
-                         text="  " + title.upper(), font=(theme.FONT_TITLE, 15),
-                         text_color=C_RED).pack(anchor="w", padx=18, pady=(12, 2))
-            body = ctk.CTkFrame(c, fg_color="transparent")
-            body.pack(fill="x", padx=18, pady=(2, 14))
-            return body
+            return self._section_card(scroll, icon_name, title)
 
         def text(parent_, s: str, dim: bool = False):
             ctk.CTkLabel(parent_, text=s, font=(theme.FONT_UI, 12),
@@ -465,15 +475,7 @@ class App(ctk.CTk):
         scroll.pack(fill="both", expand=True)
 
         def card(icon_name: str, title: str):
-            c = ctk.CTkFrame(scroll, fg_color=C_PANEL, corner_radius=14,
-                             border_width=1, border_color=C_BORDER)
-            c.pack(fill="x", padx=4, pady=(0, 12))
-            ctk.CTkLabel(c, image=icon(icon_name, 17, C_RED), compound="left",
-                         text="  " + title.upper(), font=(theme.FONT_TITLE, 15),
-                         text_color=C_RED).pack(anchor="w", padx=18, pady=(12, 2))
-            body = ctk.CTkFrame(c, fg_color="transparent")
-            body.pack(fill="x", padx=18, pady=(2, 14))
-            return body
+            return self._section_card(scroll, icon_name, title)
 
         def toggle_row(parent_, key: str, default: bool, label: str, desc: str):
             row = ctk.CTkFrame(parent_, fg_color="transparent")
@@ -1599,6 +1601,7 @@ class App(ctk.CTk):
             self.tray = pystray.Icon(APP_ID, image, APP_NAME, menu)
             threading.Thread(target=self.tray.run, daemon=True).start()
         except Exception:
+            log.warning("Icône de la barre système indisponible", exc_info=True)
             self.tray = None
 
     def _tray_show(self, icon=None, item=None):
