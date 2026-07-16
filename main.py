@@ -421,6 +421,45 @@ def keybind_map(prof: dict) -> dict | None:
     return {name: " / ".join(sorted(keys)) for name, keys in binds.items()}
 
 
+def write_profile_archive(profile_path: Path, out_path: str):
+    """Crée un fichier .vcmprofile (zip) à partir d'un dossier de profil.
+
+    Le PUUID (`subject`) du compte source est retiré du cloud.json exporté :
+    il ne sert qu'aux vérifications locales et n'a pas à circuler dans un
+    fichier destiné à être partagé."""
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in profile_path.rglob("*"):
+            if not f.is_file():
+                continue
+            rel = f.relative_to(profile_path).as_posix()
+            if rel == "cloud.json":
+                try:
+                    cloud = json.loads(f.read_text(encoding="utf-8"))
+                    cloud.pop("subject", None)
+                    z.writestr(rel, json.dumps(cloud, ensure_ascii=False))
+                    continue
+                except (OSError, json.JSONDecodeError):
+                    pass
+            z.write(f, rel)
+
+
+def extract_profile_archive(path: str, dest: Path) -> dict:
+    """Extrait un .vcmprofile vers `dest` et retourne son meta.json.
+
+    Lève ValueError si l'archive n'est pas un profil valide (meta.json
+    manquant ou chemins dangereux — zip slip)."""
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        if "meta.json" not in names:
+            raise ValueError(T("ce fichier n'est pas un profil valide",
+                               "this file is not a valid profile"))
+        for n in names:
+            if n.startswith(("/", "\\")) or ".." in n or ":" in n:
+                raise ValueError(T("archive invalide", "invalid archive"))
+        z.extractall(dest)
+    return json.loads((dest / "meta.json").read_text(encoding="utf-8"))
+
+
 def register_file_association():
     """Associe l'extension .vcmprofile à cet exe (HKCU, sans admin)."""
     if not getattr(sys, "frozen", False):
@@ -1793,10 +1832,7 @@ class App(ctk.CTk):
         if not path:
             return
         try:
-            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-                for f in prof["path"].rglob("*"):
-                    if f.is_file():
-                        z.write(f, f.relative_to(prof["path"]).as_posix())
+            write_profile_archive(prof["path"], path)
         except OSError as e:
             messagebox.showerror(APP_NAME, T(f"Export impossible :\n{e}",
                                              f"Export failed:\n{e}"))
@@ -1817,16 +1853,7 @@ class App(ctk.CTk):
         profile_id = uuid.uuid4().hex[:12]
         dest = PROFILES_DIR / profile_id
         try:
-            with zipfile.ZipFile(path) as z:
-                names = z.namelist()
-                if "meta.json" not in names:
-                    raise ValueError(T("ce fichier n'est pas un profil valide",
-                                       "this file is not a valid profile"))
-                for n in names:
-                    if n.startswith(("/", "\\")) or ".." in n or ":" in n:
-                        raise ValueError(T("archive invalide", "invalid archive"))
-                z.extractall(dest)
-            meta = json.loads((dest / "meta.json").read_text(encoding="utf-8"))
+            meta = extract_profile_archive(path, dest)
         except (OSError, ValueError, zipfile.BadZipFile, json.JSONDecodeError) as e:
             shutil.rmtree(dest, ignore_errors=True)
             messagebox.showerror(APP_NAME, T(f"Import impossible :\n{e}",

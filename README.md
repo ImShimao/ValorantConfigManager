@@ -59,7 +59,8 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
   (serveurs `player-preferences-*.pp.sgp.pvp.net`, trouvés via la config publique
   du client Riot ; l'ancien `playerpreferences.riotgames.com` est mort)
 - `make_icon.py` — génère `icon.ico`
-- Dépendances : `pip install -r requirements.txt`
+- Dépendances : `pip install -r requirements.txt` (dev : `-r requirements-dev.txt`)
+- Tests : `python -m pytest` (logique pure, sans interface ni données réelles)
 - Build : `python -m PyInstaller --noconfirm --onefile --windowed --name ValorantConfigManager --icon icon.ico --add-data "icon.ico;." --collect-all customtkinter main.py`
 - Installateur : compiler `installer.iss` avec Inno Setup (`iscc installer.iss`)
 
