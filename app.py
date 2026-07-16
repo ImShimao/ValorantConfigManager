@@ -1610,7 +1610,27 @@ class App(ctk.CTk):
     def _show_window(self):
         self.deiconify()
         self.lift()
+        # Forcer l'avant-plan sur Windows (contourne la restriction de
+        # SetForegroundWindow) : topmost bref puis relâché.
+        try:
+            self.attributes("-topmost", True)
+            self.after(250, lambda: self.attributes("-topmost", False))
+        except Exception:
+            pass
         self.focus_force()
+
+    def handle_activation(self, payload: str = ""):
+        """Appelée quand un second lancement est détecté (instance unique) :
+        réaffiche la fenêtre existante, et importe le .vcmprofile éventuel."""
+        def do():
+            self._show_window()
+            if (payload and payload.lower().endswith(PROFILE_EXT)
+                    and Path(payload).is_file()):
+                self.import_profile(path=payload)
+        try:
+            self.after(0, do)
+        except RuntimeError:
+            pass
 
     def _on_close_window(self):
         if self.tray is None or not self._setting("close_to_tray", True):

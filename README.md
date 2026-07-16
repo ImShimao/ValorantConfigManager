@@ -48,6 +48,8 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
   touches, résolution, FPS…).
 - 🔔 **Icône barre système** : fermer la fenêtre réduit l'appli à côté de l'horloge
   (double-clic pour rouvrir, clic droit → Quitter).
+- 🪟 **Instance unique** : relancer le raccourci réaffiche la fenêtre déjà ouverte
+  (même minimisée dans la barre système) au lieu d'ouvrir un second exemplaire.
 - 📁 **Double-clic sur un `.vcmprofile`** : l'extension est associée automatiquement,
   le fichier s'importe tout seul.
 - ⚙️ **Onglet Paramètres** : langue FR/EN, réglages de comportement (barre système,
@@ -65,6 +67,7 @@ Python 3 + CustomTkinter, découpé en modules :
   (serveurs `player-preferences-*.pp.sgp.pvp.net`, trouvés via la config publique
   du client Riot ; l'ancien `playerpreferences.riotgames.com` est mort)
 - `dialogs.py` — boîtes de dialogue personnalisées
+- `single_instance.py` — verrou d'instance unique (socket en boucle locale)
 - `theme.py` — couleurs, polices, icônes · `i18n.py` — langue FR/EN ·
   `appinfo.py` — métadonnées · `make_icon.py` — génère `icon.ico`
 - Dépendances : `pip install -r requirements.txt` (dev : `-r requirements-dev.txt`)
