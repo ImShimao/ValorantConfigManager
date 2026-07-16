@@ -1,0 +1,10 @@
+# Build PyInstaller / Inno Setup
+build/
+dist/
+Output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
