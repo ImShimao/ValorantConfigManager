@@ -1,0 +1,2 @@
+# Normalise les fins de ligne : Git stocke en LF, restitue selon la plateforme.
+* text=auto
