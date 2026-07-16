@@ -35,7 +35,7 @@ import riot_cloud
 from riot_cloud import RiotClientError
 
 APP_NAME = "Valorant Config Manager"
-APP_VERSION = "1.4.2"
+APP_VERSION = "1.4.3"
 APP_ID = "VCM.ValorantConfigManager"
 PROFILE_EXT = ".vcmprofile"
 
@@ -198,12 +198,16 @@ def list_accounts():
 
 
 def folder_for_puuid(puuid: str):
-    """Dossier de config correspondant à un PUUID, ou None."""
-    if not puuid:
+    """Dossier de config correspondant à un PUUID, ou None.
+
+    Appelée par le poll de statut toutes les 6 s : on parcourt seulement les
+    noms de dossiers, sans les stat récursifs de list_accounts()."""
+    if not puuid or not VALO_CONFIG_DIR.is_dir():
         return None
-    for folder, _, _ in list_accounts():
-        if folder.lower().startswith(puuid.lower()):
-            return folder
+    for entry in VALO_CONFIG_DIR.iterdir():
+        if (entry.is_dir() and ACCOUNT_DIR_RE.match(entry.name)
+                and entry.name.lower().startswith(puuid.lower())):
+            return entry.name
     return None
 
 
@@ -254,6 +258,13 @@ def read_profile_cloud(profile_path: Path) -> dict | None:
         return None
 
 
+def _rotate_backups(parent: Path):
+    """Rotation : on garde les N sauvegardes les plus récentes."""
+    backups = sorted([d for d in parent.iterdir() if d.is_dir()], reverse=True)
+    for old in backups[MAX_BACKUPS_PER_ACCOUNT:]:
+        shutil.rmtree(old, ignore_errors=True)
+
+
 def backup_account(account_dir: Path, cloud: dict | None = None, auto: bool = False) -> Path:
     ensure_dirs()
     stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ("_auto" if auto else "")
@@ -261,11 +272,20 @@ def backup_account(account_dir: Path, cloud: dict | None = None, auto: bool = Fa
     shutil.copytree(account_dir, dest / "files")
     if cloud:
         (dest / "cloud.json").write_text(json.dumps(cloud, ensure_ascii=False), encoding="utf-8")
-    # Rotation : on garde les N plus récentes
-    parent = BACKUPS_DIR / account_dir.name
-    backups = sorted([d for d in parent.iterdir() if d.is_dir()], reverse=True)
-    for old in backups[MAX_BACKUPS_PER_ACCOUNT:]:
-        shutil.rmtree(old, ignore_errors=True)
+    _rotate_backups(BACKUPS_DIR / account_dir.name)
+    return dest
+
+
+def backup_cloud_only(subject: str, cloud: dict) -> Path:
+    """Sauvegarde des seuls paramètres cloud, pour un compte qui n'a pas
+    (encore) de dossier de configuration local sur ce PC."""
+    ensure_dirs()
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    parent = BACKUPS_DIR / (subject.lower() or "inconnu")
+    dest = parent / stamp
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "cloud.json").write_text(json.dumps(cloud, ensure_ascii=False), encoding="utf-8")
+    _rotate_backups(parent)
     return dest
 
 
@@ -289,7 +309,8 @@ def is_valorant_running() -> bool:
             ["tasklist", "/FO", "CSV", "/NH"],
             creationflags=flags, text=True, errors="ignore", timeout=10,
         ).lower()
-        return "valorant-win64-shipping.exe" in out or "valorant.exe" in out
+        # Noms de processus exacts (le CSV de tasklist les met entre guillemets)
+        return '"valorant-win64-shipping.exe"' in out or '"valorant.exe"' in out
     except Exception:
         return False
 
@@ -1270,20 +1291,25 @@ class App(ctk.CTk):
                   cloud: dict | None) -> bool:
         """Sauvegarde puis applique un profil. Retourne True si OK."""
         try:
+            # Les paramètres cloud actuels du compte connecté sont toujours
+            # sauvegardés avant écrasement, même si aucun dossier local ne
+            # correspond à ce compte sur ce PC.
+            backup_cloud = None
+            if cloud and tokens:
+                try:
+                    backup_cloud = {
+                        "riot_id": self.connected_riot_id,
+                        "subject": tokens.get("subject", ""),
+                        "settings": riot_cloud.get_cloud_settings(tokens),
+                    }
+                except RiotClientError:
+                    pass
             if target_folder:
                 target_path = VALO_CONFIG_DIR / target_folder
-                backup_cloud = None
-                if cloud and tokens:
-                    try:
-                        backup_cloud = {
-                            "riot_id": self.connected_riot_id,
-                            "subject": tokens.get("subject", ""),
-                            "settings": riot_cloud.get_cloud_settings(tokens),
-                        }
-                    except RiotClientError:
-                        pass
                 backup_account(target_path, cloud=backup_cloud)
                 apply_files(prof["path"] / "files", target_path)
+            elif backup_cloud:
+                backup_cloud_only(backup_cloud["subject"], backup_cloud)
             if cloud and tokens:
                 riot_cloud.put_cloud_settings(tokens, cloud["settings"])
         except (OSError, RiotClientError) as e:
@@ -1484,6 +1510,28 @@ class App(ctk.CTk):
             return
         prof = next(p for p in self.profiles if p["id"] == chosen)
         cloud = read_profile_cloud(prof["path"]) if prof.get("has_cloud") else None
+        if target_folder is None:
+            if not cloud:
+                messagebox.showwarning(
+                    APP_NAME,
+                    T("Ce compte n'a pas de dossier de configuration sur ce PC et le "
+                      "profil choisi ne contient pas de paramètres cloud : il n'y a "
+                      "rien à transférer.",
+                      "This account has no configuration folder on this PC and the "
+                      "chosen profile has no cloud settings: there is nothing to "
+                      "transfer."))
+                return
+            if not messagebox.askyesno(
+                    APP_NAME,
+                    T("Ce compte n'a pas encore de dossier de configuration sur ce PC "
+                      "(le jeu n'y a jamais été lancé avec ce compte).\n\n"
+                      "Seuls les paramètres cloud (crosshair, sensi, keybinds) seront "
+                      "transférés — pas les réglages vidéo locaux.\n\nContinuer ?",
+                      "This account has no configuration folder on this PC yet "
+                      "(the game was never launched with it here).\n\n"
+                      "Only cloud settings (crosshair, sensitivity, keybinds) will be "
+                      "transferred — not the local video settings.\n\nContinue?")):
+                return
         if not cloud:
             if not messagebox.askyesno(
                     APP_NAME,
@@ -1817,11 +1865,22 @@ class App(ctk.CTk):
             messagebox.showwarning(APP_NAME, T("Aucun compte détecté.", "No account found."))
             return
         acc_choices = []
+        seen = set()
         for folder, _, _ in self.accounts:
+            seen.add(folder)
             n = len(list_backups(folder))
             if n:
                 acc_choices.append((folder, f"{self._account_label(folder)}   ({n} "
                                             + T("sauvegarde(s))", "backup(s))")))
+        # Sauvegardes "cloud uniquement" : comptes sans dossier local sur ce PC
+        if BACKUPS_DIR.is_dir():
+            for d in BACKUPS_DIR.iterdir():
+                if d.is_dir() and d.name not in seen and list_backups(d.name):
+                    n = len(list_backups(d.name))
+                    acc_choices.append(
+                        (d.name, self._account_label(d.name)
+                         + T("   (cloud uniquement)", "   (cloud only)")
+                         + f"   ({n} " + T("sauvegarde(s))", "backup(s))")))
         if not acc_choices:
             messagebox.showinfo(APP_NAME,
                                 T("Aucune sauvegarde disponible.\nDes sauvegardes sont créées "
@@ -1856,10 +1915,19 @@ class App(ctk.CTk):
                                      "Close Valorant before restoring a backup."))
             return
         chosen_path = Path(chosen)
-        # Anciennes sauvegardes (v1.0) : fichiers à la racine ; nouvelles : sous files/
-        src = chosen_path / "files" if (chosen_path / "files").is_dir() else chosen_path
+        # Anciennes sauvegardes (v1.0) : fichiers à la racine ; nouvelles : sous
+        # files/ ; sauvegardes "cloud uniquement" : aucun fichier local.
+        files_src = chosen_path / "files"
+        if not files_src.is_dir():
+            files_src = chosen_path if any(
+                f.name != "cloud.json" for f in chosen_path.iterdir()) else None
         try:
-            apply_files(src, VALO_CONFIG_DIR / folder)
+            if files_src is not None:
+                apply_files(files_src, VALO_CONFIG_DIR / folder)
+            loc_msg = T("Fichiers locaux restaurés ✔", "Local files restored ✔") \
+                if files_src is not None \
+                else T("Cette sauvegarde ne contient que les paramètres cloud.",
+                       "This backup only contains cloud settings.")
             cloud_file = chosen_path / "cloud.json"
             if cloud_file.is_file():
                 cloud = json.loads(cloud_file.read_text(encoding="utf-8"))
@@ -1867,24 +1935,30 @@ class App(ctk.CTk):
                     tokens = riot_cloud.get_tokens()
                     if tokens.get("subject", "").lower() == cloud.get("subject", "").lower():
                         riot_cloud.put_cloud_settings(tokens, cloud["settings"])
-                        self.set_status(T("Sauvegarde restaurée (fichiers + cloud) ✔",
-                                          "Backup restored (files + cloud) ✔"), C_GREEN)
+                        self.set_status(
+                            T("Sauvegarde restaurée (fichiers + cloud) ✔",
+                              "Backup restored (files + cloud) ✔") if files_src is not None
+                            else T("Sauvegarde restaurée (cloud) ✔",
+                                   "Backup restored (cloud) ✔"), C_GREEN)
                     else:
                         messagebox.showinfo(
                             APP_NAME,
-                            T("Fichiers locaux restaurés ✔\n\nLes paramètres cloud n'ont pas "
-                              "été restaurés : le compte connecté au client Riot n'est pas "
-                              "celui de cette sauvegarde.",
-                              "Local files restored ✔\n\nCloud settings were not restored: "
-                              "the account logged into the Riot Client is not the one from "
-                              "this backup."))
+                            loc_msg + T("\n\nLes paramètres cloud n'ont pas été "
+                                        "restaurés : le compte connecté au client Riot "
+                                        "n'est pas celui de cette sauvegarde.",
+                                        "\n\nCloud settings were not restored: the "
+                                        "account logged into the Riot Client is not the "
+                                        "one from this backup."))
                 except RiotClientError:
                     messagebox.showinfo(
                         APP_NAME,
-                        T("Fichiers locaux restaurés ✔\n\nParamètres cloud non restaurés "
-                          "(client Riot fermé). Connecte-toi puis recommence si besoin.",
-                          "Local files restored ✔\n\nCloud settings not restored (Riot "
-                          "Client closed). Log in and retry if needed."))
+                        loc_msg + T("\n\nParamètres cloud non restaurés (client Riot "
+                                    "fermé). Connecte-toi puis recommence si besoin.",
+                                    "\n\nCloud settings not restored (Riot Client "
+                                    "closed). Log in and retry if needed."))
+            else:
+                self.set_status(T("Sauvegarde restaurée (fichiers locaux) ✔",
+                                  "Backup restored (local files) ✔"), C_GREEN)
         except (OSError, json.JSONDecodeError) as e:
             messagebox.showerror(APP_NAME, T(f"Erreur pendant la restauration :\n{e}",
                                              f"Error while restoring:\n{e}"))

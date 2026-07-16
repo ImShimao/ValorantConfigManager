@@ -207,13 +207,19 @@ def decode_settings_blob(data: str) -> dict | None:
 
 
 def put_cloud_settings(tokens: dict, settings: dict) -> dict:
-    """Écrit les paramètres cloud. `settings` = dict renvoyé par get_cloud_settings
-    (au minimum {'data': ..., 'host': ...})."""
-    host = settings.get("host") or _candidate_hosts()[0]
-    try:
-        return _cloud_request("PUT", f"{host}/playerPref/v3/savePreference", tokens,
-                              {"type": SETTINGS_TYPE, "data": settings["data"]})
-    except urllib.error.HTTPError as e:
-        raise RiotClientError(f"Écriture des paramètres cloud refusée (HTTP {e.code}).")
-    except (urllib.error.URLError, OSError):
-        raise RiotClientError("Impossible de contacter les serveurs Riot (connexion internet ?).")
+    """Écrit les paramètres cloud sur le compte CONNECTÉ.
+
+    Le serveur est choisi d'après la région du compte connecté — pas d'après
+    le 'host' mémorisé dans `settings`, qui est celui du compte SOURCE du
+    profil (les deux comptes peuvent être de régions différentes).
+    `settings` = dict avec au minimum {'data': ...}."""
+    body = {"type": SETTINGS_TYPE, "data": settings["data"]}
+    last_error = None
+    for host in _candidate_hosts():
+        try:
+            return _cloud_request("PUT", f"{host}/playerPref/v3/savePreference", tokens, body)
+        except urllib.error.HTTPError as e:
+            last_error = f"HTTP {e.code}"
+        except (urllib.error.URLError, OSError):
+            raise RiotClientError("Impossible de contacter les serveurs Riot (connexion internet ?).")
+    raise RiotClientError(f"Écriture des paramètres cloud refusée ({last_error}).")

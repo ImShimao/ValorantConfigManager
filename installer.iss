@@ -1,9 +1,9 @@
 ; Script Inno Setup — Valorant Config Manager
 ; Compiler avec : iscc installer.iss
-; Produit : Output\ValorantConfigManager-Setup-1.4.0.exe
+; Produit : Output\ValorantConfigManager-Setup-{version}.exe
 
 #define MyAppName "Valorant Config Manager"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.4.3"
 #define MyAppExeName "ValorantConfigManager.exe"
 
 [Setup]
