@@ -1,7 +1,27 @@
-# Valorant Config Manager
+<h1 align="center">Valorant Config Manager</h1>
 
-Sauvegarde et transfère tes paramètres Valorant (vidéo, crosshair, sensibilité, keybinds…)
-entre plusieurs comptes Riot sur le même PC.
+<p align="center">
+  Sauvegarde et transfère tes paramètres Valorant (vidéo, crosshair, sensibilité, keybinds…)<br>
+  entre plusieurs comptes Riot sur le même PC.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/ImShimao/ValorantConfigManager?color=ff4655&label=version" alt="Version">
+  <img src="https://img.shields.io/github/license/ImShimao/ValorantConfigManager?color=ff4655" alt="Licence">
+  <img src="https://img.shields.io/github/downloads/ImShimao/ValorantConfigManager/total?color=ff4655" alt="Téléchargements">
+  <img src="https://img.shields.io/badge/Windows-10%20%2F%2011-0f1923" alt="Windows">
+</p>
+
+<p align="center">
+  <img src="docs/screenshot-gestion.png" alt="Écran principal — comptes et profils" width="840">
+</p>
+
+## ⬇️ Téléchargement
+
+Rends-toi sur la [**page des releases**](../../releases/latest) et prends l'un des deux :
+
+- **`ValorantConfigManager-Setup-x.y.z.exe`** — l'installeur (crée les raccourcis et associe les fichiers `.vcmprofile`).
+- **`ValorantConfigManager.exe`** — la version portable, à lancer directement, sans installation.
 
 ## Comment ça marche
 
@@ -37,6 +57,12 @@ au client Riot pendant que l'appli tourne. Tu peux aussi les renommer à la main
 
 Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\`.
 
+> 💡 Tout est aussi expliqué pas à pas dans l'onglet **Aide** de l'appli :
+
+<p align="center">
+  <img src="docs/screenshot-aide.png" alt="Onglet Aide — guide intégré" width="840">
+</p>
+
 ## Fonctions
 
 - ⚡ **Transfert express** : applique un profil au compte connecté + lance le jeu, en un clic.
@@ -55,6 +81,10 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
 - ⚙️ **Onglet Paramètres** : langue FR/EN, réglages de comportement (barre système,
   instantanés automatiques, alerte de changement de compte), accès au dossier de
   données, à propos.
+
+<p align="center">
+  <img src="docs/screenshot-parametres.png" alt="Onglet Paramètres" width="840">
+</p>
 
 ## Développement
 
@@ -80,3 +110,10 @@ Python 3 + CustomTkinter, découpé en modules :
 Le logiciel ne modifie que des fichiers de configuration et les préférences de jeu
 du compte connecté. Il ne demande jamais d'identifiants et n'automatise rien dans le
 jeu. Les jetons de session ne sont jamais écrits sur le disque.
+
+Ce projet est indépendant et n'est ni affilié à, ni approuvé par Riot Games. Valorant
+et Riot Games sont des marques de Riot Games, Inc.
+
+## Licence
+
+[MIT](LICENSE) © 2026 ImShimao
