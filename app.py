@@ -221,12 +221,16 @@ class App(ctk.CTk):
                       text_color=C_TEXT_DIM, font=(theme.FONT_UI, 11),
                       command=lambda v=version: self._skip_update(v)).pack(
             side="right", padx=6)
-        ctk.CTkButton(bar, text=T(" Télécharger", " Download"),
+        auto = updater.install_mode() is not None
+        ctk.CTkButton(bar,
+                      text=T(" Mettre à jour", " Update now") if auto
+                      else T(" Télécharger", " Download"),
                       image=icon("import", 14, "#ffffff"), compound="left",
-                      width=140, height=28, corner_radius=8,
+                      width=150, height=28, corner_radius=8,
                       fg_color=C_RED, hover_color=C_RED_HOVER,
                       font=(theme.FONT_UI, 12, "bold"),
-                      command=lambda: webbrowser.open(updater.LATEST_URL)).pack(
+                      command=(lambda v=version: self._start_auto_update(v)) if auto
+                      else (lambda: webbrowser.open(updater.LATEST_URL))).pack(
             side="right", padx=8)
 
     def _hide_update_banner(self):
@@ -239,6 +243,56 @@ class App(ctk.CTk):
         self.settings["skip_version"] = version
         save_settings(self.settings)
         self._hide_update_banner()
+
+    def _start_auto_update(self, version: str):
+        """Télécharge la mise à jour puis ferme l'appli : un script relais
+        applique la nouvelle version et relance l'appli tout seul."""
+        mode = updater.install_mode()
+        if mode is None:
+            webbrowser.open(updater.LATEST_URL)
+            return
+        self._hide_update_banner()
+        self.set_status(T(f"Téléchargement de la version {version}…",
+                          f"Downloading version {version}…"), C_GREEN)
+
+        def worker():
+            def prog(done, total):
+                pct = int(done * 100 / total)
+                try:
+                    self.after(0, lambda p=pct: self.set_status(
+                        T(f"Téléchargement de la version {version}… {p} %",
+                          f"Downloading version {version}… {p} %"), C_GREEN))
+                except RuntimeError:
+                    pass
+            try:
+                package = updater.fetch_update(version, mode, progress=prog)
+                updater.apply_update(package, mode)
+            except OSError as e:
+                log.error("Échec de la mise à jour automatique", exc_info=True)
+                try:
+                    # err=e : la variable d'exception disparaît à la fin du
+                    # bloc except, il faut la capturer tout de suite.
+                    self.after(0, lambda err=e: self._update_failed(err))
+                except RuntimeError:
+                    pass
+                return
+            # Le script relais attend la fin du processus : on quitte.
+            try:
+                self.after(0, self.destroy)
+            except RuntimeError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update_failed(self, err):
+        self.set_status(T("Mise à jour impossible.", "Update failed."), C_ORANGE)
+        if messagebox.askyesno(
+                APP_NAME,
+                T(f"Le téléchargement de la mise à jour a échoué :\n{err}\n\n"
+                  "Ouvrir la page de téléchargement dans le navigateur ?",
+                  f"The update download failed:\n{err}\n\n"
+                  "Open the download page in your browser?")):
+            webbrowser.open(updater.LATEST_URL)
 
     def _build_body(self):
         self.tabs = ctk.CTkTabview(

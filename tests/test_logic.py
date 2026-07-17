@@ -330,6 +330,58 @@ def test_is_newer():
     assert updater.is_newer("garbage", "1.0.0") is False
 
 
+def test_install_mode_depuis_les_sources():
+    # Lancé par pytest (pas un exe PyInstaller) : pas de mise à jour auto
+    assert updater.install_mode() is None
+
+
+def test_download_url():
+    assert updater.download_url("1.7.1", "installed").endswith(
+        "/releases/download/v1.7.1/ValorantConfigManager-Setup-1.7.1.exe")
+    assert updater.download_url("1.7.1", "portable").endswith(
+        "/releases/download/v1.7.1/ValorantConfigManager.exe")
+
+
+def test_build_update_script():
+    dl, exe = Path(r"C:\tmp\new.exe"), Path(r"C:\app\vcm.exe")
+    # Portable : attend le processus, remplace avec réessais, relance, s'efface
+    s = "\n".join(updater.build_update_script(dl, exe, 1234, "portable"))
+    assert '"PID eq 1234"' in s and "goto waitexit" in s
+    assert 'move /y "C:\\tmp\\new.exe" "C:\\app\\vcm.exe"' in s
+    assert "goto replace" in s and 'start "" "C:\\app\\vcm.exe"' in s
+    assert 'del "%~f0"' in s
+    # Installé : installeur silencieux, pas de move
+    s = "\n".join(updater.build_update_script(dl, exe, 1234, "installed"))
+    assert "/VERYSILENT" in s and "move /y" not in s
+    # relaunch=False : ne relance pas
+    s = "\n".join(updater.build_update_script(dl, exe, 1234, "portable",
+                                              relaunch=False))
+    assert 'start ""' not in s
+
+
+def test_remplacement_portable_reel(tmp_path):
+    """Exécute RÉELLEMENT le script batch : l'ancien exe doit être remplacé
+    par le nouveau une fois le processus terminé, et le script s'auto-effacer."""
+    import subprocess
+    old = tmp_path / "app.exe"
+    new = tmp_path / "new.exe"
+    old.write_text("ANCIENNE VERSION", encoding="ascii")
+    new.write_text("NOUVELLE VERSION", encoding="ascii")
+    # Un processus déjà terminé : la boucle d'attente doit passer tout de suite
+    dead = subprocess.Popen(["cmd", "/c", "exit 0"],
+                            creationflags=subprocess.CREATE_NO_WINDOW)
+    dead.wait()
+    lines = updater.build_update_script(new, old, dead.pid, "portable",
+                                        relaunch=False)
+    script = tmp_path / "update.cmd"
+    script.write_text("\r\n".join(lines) + "\r\n", encoding="ascii")
+    subprocess.run(["cmd", "/c", str(script)], timeout=30,
+                   creationflags=subprocess.CREATE_NO_WINDOW)
+    assert old.read_text(encoding="ascii") == "NOUVELLE VERSION"
+    assert not new.exists()          # déplacé, pas copié
+    assert not script.exists()       # le script s'est auto-effacé
+
+
 # ----------------------------------------------------------------------------
 # Instance unique
 # ----------------------------------------------------------------------------

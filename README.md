@@ -87,8 +87,9 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
 - ⚙️ **Onglet Paramètres** : langue FR/EN, réglages de comportement (barre système,
   instantanés automatiques, alerte de changement de compte), accès au dossier de
   données, à propos.
-- 🔄 **Notification de mise à jour** : au lancement (et une fois par jour), l'appli
-  signale les nouvelles versions publiées ici, avec un bouton de téléchargement.
+- 🔄 **Mise à jour en un clic** : au lancement (et une fois par jour), l'appli signale
+  les nouvelles versions publiées ici. Le bouton « Mettre à jour » télécharge, installe
+  et relance l'appli tout seul — que ce soit la version installée ou la portable.
   Désactivable dans les Paramètres ; aucune donnée envoyée.
 
 <p align="center">
