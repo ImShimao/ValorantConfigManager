@@ -189,6 +189,31 @@ def test_import_refuse_zip_slip(tmp_path):
     assert not (tmp_path / "evil.txt").exists()
 
 
+def test_export_import_profil_partiel(sandbox, tmp_path):
+    """Un profil « touches seules » doit survivre à l'export puis l'import :
+    catégories conservées, pas de fichiers vidéo, cloud filtré intact."""
+    account = core.VALO_CONFIG_DIR / "12345678-1234-1234-1234-123456789abc-eu1"
+    (account / "Windows").mkdir(parents=True)
+    (account / "Windows" / "GameUserSettings.ini").write_text("x", encoding="utf-8")
+    cloud = {"riot_id": "A#B", "subject": "s",
+             "settings": {"data": make_blob(_parsed()), "host": "h"}}
+    pid = core.create_profile(account, "Touches", "Main", cloud=cloud,
+                              categories=[core.CAT_KEYBINDS])
+    src = core.PROFILES_DIR / pid
+
+    out = tmp_path / "touches.vcmprofile"
+    core.write_profile_archive(src, str(out))
+    dest = tmp_path / "imported"
+    meta = core.extract_profile_archive(str(out), dest)
+
+    assert meta["categories"] == [core.CAT_KEYBINDS]
+    assert not (dest / "files").exists()
+    _, parsed = core.load_parsed_cloud(dest)
+    assert "actionMappings" in parsed and "floatSettings" not in parsed
+    # Et l'application n'y verra bien que les touches
+    assert core.profile_categories(meta) == [core.CAT_KEYBINDS]
+
+
 # ----------------------------------------------------------------------------
 # Sauvegardes
 # ----------------------------------------------------------------------------
