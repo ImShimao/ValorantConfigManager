@@ -1664,7 +1664,9 @@ class App(ctk.CTk):
                 pass
 
         threading.Thread(target=worker, daemon=True).start()
-        self.after(6000, self._poll_status)
+        # Toutes les 10 s : assez réactif pour détecter un changement de compte,
+        # sans lancer `tasklist` trop souvent (création de processus).
+        self.after(10000, self._poll_status)
 
     def _update_status_ui(self, game_running: bool, riot_id: str, subject: str):
         self._last_game_running = game_running

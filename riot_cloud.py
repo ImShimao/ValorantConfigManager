@@ -148,6 +148,17 @@ def _cloud_request(method: str, url: str, tokens: dict, body: dict | None = None
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _http_reason(code: int) -> str:
+    """Message lisible pour un code HTTP. Un 401/403 signifie en général que
+    Riot a rejeté nos en-têtes (User-Agent/plateforme) : c'est le symptôme
+    typique d'une évolution de leur API — l'appli a alors besoin d'une mise à
+    jour, plutôt qu'un simple « HTTP 403 » opaque."""
+    if code in (401, 403):
+        return (f"HTTP {code} — accès refusé par Riot. Une mise à jour de "
+                "l'appli est probablement nécessaire (l'API Riot a pu changer).")
+    return f"HTTP {code}"
+
+
 def get_cloud_settings(tokens: dict) -> dict:
     """Paramètres cloud du compte connecté : {'type', 'data', 'modified', 'host'}.
 
@@ -162,7 +173,7 @@ def get_cloud_settings(tokens: dict) -> dict:
                 result["host"] = host
                 return result
         except urllib.error.HTTPError as e:
-            last_error = f"HTTP {e.code}"
+            last_error = _http_reason(e.code)
         except (urllib.error.URLError, OSError) as e:
             last_error = str(e)
     raise RiotClientError(
@@ -219,7 +230,7 @@ def put_cloud_settings(tokens: dict, settings: dict) -> dict:
         try:
             return _cloud_request("PUT", f"{host}/playerPref/v3/savePreference", tokens, body)
         except urllib.error.HTTPError as e:
-            last_error = f"HTTP {e.code}"
+            last_error = _http_reason(e.code)
         except (urllib.error.URLError, OSError):
             raise RiotClientError("Impossible de contacter les serveurs Riot (connexion internet ?).")
     raise RiotClientError(f"Écriture des paramètres cloud refusée ({last_error}).")

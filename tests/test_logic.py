@@ -8,6 +8,8 @@ redirigés vers des dossiers temporaires : rien ne touche aux vraies données.
 
 import base64
 import json
+import os
+import time
 import zipfile
 import zlib
 from pathlib import Path
@@ -16,6 +18,7 @@ import pytest
 
 import core
 import riot_cloud
+import single_instance
 
 
 # ----------------------------------------------------------------------------
@@ -229,3 +232,69 @@ def test_list_backups_tri_recent_d_abord(sandbox):
     backups = core.list_backups("compte")
     assert [b.name for b in backups] == [
         "2025-06-15_08-30-00_auto", "2024-01-01_10-00-00", "2023-12-31_23-59-59"]
+
+
+def test_apply_files_ignore_cloud_json(tmp_path):
+    """cloud.json (métadonnées internes) ne doit jamais atterrir dans le dossier
+    de config Valorant — cas des sauvegardes legacy où il est à la racine."""
+    src = tmp_path / "backup_root"
+    (src / "Windows").mkdir(parents=True)
+    (src / "Windows" / "GameUserSettings.ini").write_text("res", encoding="utf-8")
+    (src / "cloud.json").write_text("{}", encoding="utf-8")
+    target = tmp_path / "account"
+    core.apply_files(src, target)
+    assert (target / "Windows" / "GameUserSettings.ini").is_file()
+    assert not (target / "cloud.json").exists()
+
+
+# ----------------------------------------------------------------------------
+# Cache de décodage cloud
+# ----------------------------------------------------------------------------
+def test_load_parsed_cloud_cache(tmp_path):
+    prof = make_profile_dir(tmp_path, CLOUD_PAYLOAD)
+    cloud1, parsed1 = core.load_parsed_cloud(prof)
+    assert parsed1 is not None and parsed1["floatSettings"]
+    # 2e appel : servi par le cache (même objet décodé, pas re-décodé)
+    _, parsed2 = core.load_parsed_cloud(prof)
+    assert parsed2 is parsed1
+    # Réécriture du cloud.json (mtime différent) → cache invalidé, nouveau décodage
+    cf = prof / "cloud.json"
+    data = json.loads(cf.read_text(encoding="utf-8"))
+    data["settings"]["data"] = make_blob({"floatSettings": [], "actionMappings": []})
+    cf.write_text(json.dumps(data), encoding="utf-8")
+    os.utime(cf, (time.time() + 5, time.time() + 5))
+    _, parsed3 = core.load_parsed_cloud(prof)
+    assert parsed3 is not parsed1
+    assert parsed3["floatSettings"] == []
+
+
+def test_load_parsed_cloud_absent(tmp_path):
+    (tmp_path / "profile").mkdir()
+    assert core.load_parsed_cloud(tmp_path / "profile") == (None, None)
+
+
+# ----------------------------------------------------------------------------
+# riot_cloud : messages d'erreur HTTP
+# ----------------------------------------------------------------------------
+def test_http_reason():
+    assert "mise à jour" in riot_cloud._http_reason(403)
+    assert "mise à jour" in riot_cloud._http_reason(401)
+    assert riot_cloud._http_reason(500) == "HTTP 500"
+
+
+# ----------------------------------------------------------------------------
+# Instance unique
+# ----------------------------------------------------------------------------
+def test_single_instance_verrou_et_payload():
+    srv = single_instance.acquire()
+    assert srv is not None, "la 1re acquisition doit réussir"
+    try:
+        assert single_instance.acquire() is None, "le verrou doit bloquer la 2e"
+        recu = []
+        single_instance.serve(srv, recu.append)
+        time.sleep(0.2)
+        assert single_instance.signal_primary("mon profil.vcmprofile")
+        time.sleep(0.3)
+        assert recu == ["mon profil.vcmprofile"]
+    finally:
+        srv.close()

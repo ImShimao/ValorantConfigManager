@@ -13,12 +13,14 @@ def resource_path(name: str) -> Path:
 
 def _read_version() -> str:
     """Version lue depuis le fichier VERSION (source unique, partagée avec
-    l'installeur Inno Setup). Repli sur une valeur littérale si le fichier est
-    absent — ne doit jamais faire échouer le démarrage."""
+    l'installeur Inno Setup). Le fichier doit toujours être présent (bundlé par
+    le .spec, à la racine en dev) ; le repli « dev » est volontairement une
+    valeur non-version, pour qu'un build cassé se voie au lieu de mentir sur la
+    version. Ne doit jamais faire échouer le démarrage."""
     try:
-        return resource_path("VERSION").read_text(encoding="utf-8").strip() or "1.5.1"
+        return resource_path("VERSION").read_text(encoding="utf-8").strip() or "dev"
     except OSError:
-        return "1.5.1"
+        return "dev"
 
 
 APP_NAME = "Valorant Config Manager"

@@ -105,8 +105,10 @@ Python 3 + CustomTkinter, découpé en modules :
   (rotation ; capture les exceptions non rattrapées, utile pour le support)
 - Dépendances : `pip install -r requirements.txt` (dev : `-r requirements-dev.txt`)
 - Tests : `python -m pytest` (logique pure, sans interface ni données réelles)
-- Build : `python -m PyInstaller --noconfirm --onefile --windowed --name ValorantConfigManager --icon icon.ico --add-data "icon.ico;." --collect-all customtkinter --collect-all pystray main.py`
-- Installateur : compiler `installer.iss` avec Inno Setup (`iscc installer.iss`)
+- Build : `python -m PyInstaller --noconfirm ValorantConfigManager.spec`
+  (le `.spec` embarque `icon.ico` **et** `VERSION`, et collecte customtkinter + pystray)
+- Installateur : compiler `installer.iss` avec Inno Setup (`iscc installer.iss`) ;
+  la version est lue automatiquement depuis le fichier `VERSION`
 
 ## Avertissement
 
