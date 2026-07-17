@@ -14,6 +14,7 @@ Les dossiers de données sont des globals de module : les tests les
 redirigent vers des dossiers temporaires via monkeypatch.
 """
 
+import copy
 import json
 import os
 import re
@@ -42,6 +43,142 @@ ACCOUNTS_FILE = DATA_DIR / "accounts.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 MAX_BACKUPS_PER_ACCOUNT = 20
+
+# ----------------------------------------------------------------------------
+# Catégories de réglages
+# ----------------------------------------------------------------------------
+# Un profil ne contient que les catégories choisies à la sauvegarde ; à
+# l'application, seules celles-ci remplacent les réglages du compte cible —
+# tout le reste du compte est conservé tel quel.
+CAT_VIDEO = "video"            # fichiers locaux (GameUserSettings.ini...)
+CAT_KEYBINDS = "keybinds"
+CAT_SENSITIVITY = "sensitivity"
+CAT_CROSSHAIR = "crosshair"
+CAT_AUDIO = "audio"
+CAT_MINIMAP = "minimap"
+CAT_GAMEPLAY = "gameplay"
+# Interne, jamais proposé ni transféré : drapeaux d'état du compte (tutoriels
+# vus, conditions acceptées...). Les copier d'un compte à l'autre n'a pas de
+# sens et pourrait perturber le compte cible.
+CAT_ACCOUNT = "account"
+
+CATEGORY_ORDER = [CAT_VIDEO, CAT_KEYBINDS, CAT_SENSITIVITY, CAT_CROSSHAIR,
+                  CAT_AUDIO, CAT_MINIMAP, CAT_GAMEPLAY]
+# Catégories stockées dans le blob cloud (toutes sauf les fichiers locaux)
+CLOUD_CATEGORIES = [c for c in CATEGORY_ORDER if c != CAT_VIDEO]
+
+
+def category_label(cat: str) -> str:
+    return {
+        CAT_VIDEO: T("Réglages vidéo", "Video settings"),
+        CAT_KEYBINDS: T("Touches", "Keybinds"),
+        CAT_SENSITIVITY: T("Sensibilité", "Sensitivity"),
+        CAT_CROSSHAIR: T("Crosshair", "Crosshair"),
+        CAT_AUDIO: T("Audio", "Audio"),
+        CAT_MINIMAP: T("Minimap", "Minimap"),
+        CAT_GAMEPLAY: T("Interface & jeu", "Interface & gameplay"),
+    }.get(cat, cat)
+
+
+def category_desc(cat: str) -> str:
+    return {
+        CAT_VIDEO: T("Résolution, limite FPS, mode d'affichage (propres à ce PC).",
+                     "Resolution, FPS limit, display mode (specific to this PC)."),
+        CAT_KEYBINDS: T("Toutes les touches et les axes de la souris.",
+                        "All key bindings and mouse axes."),
+        CAT_SENSITIVITY: T("Sensibilité souris et multiplicateur de visée (ADS).",
+                           "Mouse sensitivity and ADS multiplier."),
+        CAT_CROSSHAIR: T("Viseurs enregistrés et leurs options.",
+                         "Saved crosshairs and their options."),
+        CAT_AUDIO: T("Volumes, micro, voix, push-to-talk.",
+                     "Volumes, microphone, voice, push-to-talk."),
+        CAT_MINIMAP: T("Taille, zoom, rotation de la minimap.",
+                       "Minimap size, zoom, rotation."),
+        CAT_GAMEPLAY: T("Sang, traceurs, cadavres, daltonisme, auto-équipement…",
+                        "Blood, tracers, corpses, colorblind mode, auto-equip…"),
+    }.get(cat, "")
+
+
+# Classification par nom d'enum. Fondée sur les noms réellement présents dans
+# le blob Valorant. L'ordre des tests compte : « MicSensitivityThreshold »
+# contient « Sensitivity » mais relève de l'audio, et « VideoVolume » contient
+# « Video » mais est un volume sonore.
+_ACCOUNT_PREFIXES = ("HasSeen", "HasAccepted", "HasEver", "LastSeen", "LastAccepted")
+_ACCOUNT_EXACT = {"ContextAwareModuleComplete"}
+_AUDIO_TOKENS = ("Volume", "Mic", "Voice", "HRTF", "PushToTalk", "Music")
+
+_SETTING_LISTS = ("boolSettings", "intSettings", "floatSettings", "stringSettings")
+_INPUT_LISTS = ("actionMappings", "axisMappings")
+
+
+def _short_enum(value) -> str:
+    return str(value or "").split("::")[-1]
+
+
+def category_for_enum(short: str) -> str:
+    """Catégorie d'un réglage cloud, d'après son nom court."""
+    if short in _ACCOUNT_EXACT or short.startswith(_ACCOUNT_PREFIXES):
+        return CAT_ACCOUNT
+    if "Crosshair" in short:
+        return CAT_CROSSHAIR
+    if "Minimap" in short:
+        return CAT_MINIMAP
+    if any(tok in short for tok in _AUDIO_TOKENS):
+        return CAT_AUDIO
+    if "Sensitivity" in short:
+        return CAT_SENSITIVITY
+    return CAT_GAMEPLAY
+
+
+def filter_cloud(parsed: dict, categories) -> dict:
+    """Sous-ensemble du blob ne gardant que les catégories demandées.
+
+    Utilisé à la sauvegarde : un profil ne stocke que ce que l'utilisateur a
+    coché."""
+    cats = set(categories)
+    out = {}
+    for kind in _SETTING_LISTS:
+        items = [it for it in parsed.get(kind, [])
+                 if category_for_enum(_short_enum(it.get("settingEnum"))) in cats]
+        if items:
+            out[kind] = copy.deepcopy(items)
+    if CAT_KEYBINDS in cats:
+        for kind in _INPUT_LISTS:
+            if kind in parsed:
+                out[kind] = copy.deepcopy(parsed[kind])
+    return out
+
+
+def merge_cloud(base: dict, incoming: dict, categories) -> dict:
+    """Réglages du compte cible (`base`) où l'on n'injecte que `categories`
+    depuis `incoming` (le profil). Tout le reste de `base` est conservé —
+    y compris les réglages inconnus et les drapeaux d'état du compte."""
+    cats = set(categories)
+    merged = copy.deepcopy(base)
+    for kind in _SETTING_LISTS:
+        kept = [it for it in merged.get(kind, [])
+                if category_for_enum(_short_enum(it.get("settingEnum"))) not in cats]
+        new = [it for it in incoming.get(kind, [])
+               if category_for_enum(_short_enum(it.get("settingEnum"))) in cats]
+        if kept or new:
+            merged[kind] = kept + copy.deepcopy(new)
+    if CAT_KEYBINDS in cats:
+        for kind in _INPUT_LISTS:
+            if kind in incoming:
+                merged[kind] = copy.deepcopy(incoming[kind])
+    return merged
+
+
+def profile_categories(prof: dict) -> list:
+    """Catégories contenues dans un profil.
+
+    Les profils créés avant cette fonctionnalité n'ont pas le champ : on déduit
+    leur contenu de ce qu'ils embarquent réellement — tout s'ils ont un blob
+    cloud, les seuls réglages vidéo sinon."""
+    cats = prof.get("categories")
+    if not cats:
+        cats = list(CATEGORY_ORDER) if prof.get("has_cloud") else [CAT_VIDEO]
+    return [c for c in CATEGORY_ORDER if c in cats]
 
 
 def load_settings() -> dict:
@@ -130,22 +267,39 @@ def list_profiles():
 
 
 def create_profile(account_dir: Path, profile_name: str, account_label: str,
-                   cloud: dict | None = None) -> str:
-    """cloud : {'riot_id':..., 'subject':..., 'settings': {...}} ou None."""
+                   cloud: dict | None = None, categories=None) -> str:
+    """cloud : {'riot_id':..., 'subject':..., 'settings': {...}} ou None.
+
+    `categories` : ce que l'utilisateur a choisi d'enregistrer (défaut : tout).
+    Les fichiers locaux ne sont copiés que si la catégorie vidéo est retenue, et
+    le blob cloud est filtré pour ne garder que les catégories cochées."""
+    cats = [c for c in CATEGORY_ORDER if c in set(categories)] if categories \
+        else list(CATEGORY_ORDER)
     ensure_dirs()
     profile_id = uuid.uuid4().hex[:12]
     dest = PROFILES_DIR / profile_id
-    shutil.copytree(account_dir, dest / "files")
+    dest.mkdir(parents=True, exist_ok=True)
+    if CAT_VIDEO in cats:
+        shutil.copytree(account_dir, dest / "files")
     meta = {
         "name": profile_name,
         "source_folder": account_dir.name,
         "source_name": account_label,
         "created": datetime.now().isoformat(timespec="seconds"),
         "riot_id": (cloud or {}).get("riot_id", ""),
+        "categories": cats,
     }
     (dest / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    if cloud:
-        (dest / "cloud.json").write_text(json.dumps(cloud, ensure_ascii=False), encoding="utf-8")
+
+    cloud_cats = [c for c in cats if c != CAT_VIDEO]
+    if cloud and cloud_cats:
+        parsed = riot_cloud.decode_settings_blob((cloud.get("settings") or {}).get("data", ""))
+        stored = dict(cloud)
+        if parsed is not None:
+            stored["settings"] = dict(cloud.get("settings") or {})
+            stored["settings"]["data"] = riot_cloud.encode_settings_blob(
+                filter_cloud(parsed, cloud_cats))
+        (dest / "cloud.json").write_text(json.dumps(stored, ensure_ascii=False), encoding="utf-8")
     return profile_id
 
 

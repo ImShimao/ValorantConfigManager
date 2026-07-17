@@ -21,16 +21,17 @@ import riot_cloud
 import theme
 from appinfo import (APP_ID, APP_NAME, APP_VERSION, GITHUB_URL, PROFILE_EXT,
                      resource_path)
-from core import (VALO_CONFIG_DIR, BACKUPS_DIR, DATA_DIR, PROFILES_DIR,
-                  apply_files, backup_account, backup_cloud_only,
+from core import (CAT_VIDEO, CATEGORY_ORDER, VALO_CONFIG_DIR, BACKUPS_DIR,
+                  DATA_DIR, PROFILES_DIR, apply_files, backup_account,
+                  backup_cloud_only, category_desc, category_label,
                   cloud_settings_map, create_profile, ensure_dirs,
                   extract_profile_archive, fmt_date, folder_for_puuid,
                   is_valorant_running, keybind_map, list_accounts,
                   list_backups, list_profiles, load_account_names,
-                  load_settings, profile_summary, read_profile_cloud,
-                  save_account_names, save_settings, short_id,
-                  write_profile_archive)
-from dialogs import ChoiceDialog, TextDialog, place_over
+                  load_settings, merge_cloud, profile_categories,
+                  profile_summary, read_profile_cloud, save_account_names,
+                  save_settings, short_id, write_profile_archive)
+from dialogs import CheckDialog, ChoiceDialog, TextDialog, place_over
 from i18n import T
 from logutil import log
 from riot_cloud import RiotClientError
@@ -365,6 +366,25 @@ class App(ctk.CTk):
                 T("Le jeu se lance : tous tes réglages sont là.",
                   "The game launches: all your settings are there.")), start=1):
             step_row(body, n, s)
+
+        # --- Catégories --------------------------------------------------------
+        body = card("check", T("Choisir ce qu'on transfère", "Choosing what to transfer"))
+        text(body, T("À la sauvegarde, tu coches les catégories à mettre dans le "
+                     "profil : réglages vidéo, touches, sensibilité, crosshair, audio, "
+                     "minimap, interface & jeu.",
+                     "When saving, you tick the categories to store in the profile: "
+                     "video settings, keybinds, sensitivity, crosshair, audio, minimap, "
+                     "interface & gameplay."))
+        text(body, T("À l'application, seules ces catégories remplacent les réglages du "
+                     "compte cible — tout le reste de ce compte est conservé. Un profil "
+                     "« Touches » seulement changera donc les touches, sans toucher à la "
+                     "sensi ni au crosshair du compte.",
+                     "When applied, only those categories replace the target account's "
+                     "settings — everything else on that account is kept. A keybinds-only "
+                     "profile changes the keys without touching the account's sensitivity "
+                     "or crosshair."))
+        text(body, T("Chaque carte de profil indique ce qu'il contient.",
+                     "Each profile card shows what it contains."), dim=True)
 
         # --- Boutons -----------------------------------------------------------
         body = card("save", T("Les boutons", "The buttons"))
@@ -726,15 +746,21 @@ class App(ctk.CTk):
             if prof.get("has_cloud"):
                 ctk.CTkLabel(name_row, text="", image=icon("cloud", 15, C_GREEN)).pack(
                     side="left", padx=(8, 0))
-            else:
-                ctk.CTkLabel(name_row, text=T("  (local uniquement)", "  (local only)"),
-                             font=(theme.FONT_UI, 10),
-                             text_color=C_ORANGE).pack(side="left")
             created = prof.get("created", "?").replace("T", " ")
             src = prof.get("riot_id") or prof.get("source_name") or short_id(prof.get("source_folder", "?")) + "…"
             ctk.CTkLabel(card, text=T(f"Depuis : {src}   •   Créé le {created}",
                                       f"From: {src}   •   Created {created}"),
                          font=(theme.FONT_UI, 11), text_color=C_TEXT_DIM,
+                         wraplength=440, justify="left").pack(anchor="w", padx=14)
+
+            # Ce que le profil contient — et donc ce qu'il remplacera
+            cats = profile_categories(prof)
+            complet = len(cats) == len(CATEGORY_ORDER)
+            resume = T("tout", "everything") if complet \
+                else " · ".join(category_label(c) for c in cats)
+            ctk.CTkLabel(card, text=T(f"Contient : {resume}", f"Contains: {resume}"),
+                         font=(theme.FONT_UI, 11),
+                         text_color=C_TEXT_DIM if complet else C_ORANGE,
                          wraplength=440, justify="left").pack(anchor="w", padx=14)
 
             btns = ctk.CTkFrame(card, fg_color="transparent")
@@ -892,11 +918,43 @@ class App(ctk.CTk):
         if resolved is None:
             return
         name, to_replace = resolved
-        cloud = self._fetch_cloud_for_save(folder)
-        if cloud == "ABORT":
+
+        cats = CheckDialog(
+            self, T("Que veut-on enregistrer ?", "What should be saved?"),
+            T("Coche les réglages à mettre dans ce profil. À l'application, seuls "
+              "ceux-ci remplaceront les réglages du compte cible — tout le reste de "
+              "ce compte sera conservé.",
+              "Tick the settings to store in this profile. When applied, only these "
+              "will replace the target account's settings — everything else on that "
+              "account is kept."),
+            items=[(c, category_label(c), category_desc(c)) for c in CATEGORY_ORDER],
+            preselect=CATEGORY_ORDER,
+            confirm_text=T("Enregistrer", "Save")).get()
+        if not cats:
             return
+
+        # Le client Riot n'est nécessaire que pour les catégories cloud : un
+        # profil « vidéo seule » se crée sans lui.
+        cloud = None
+        if any(c != CAT_VIDEO for c in cats):
+            cloud = self._fetch_cloud_for_save(folder)
+            if cloud == "ABORT":
+                return
+            if cloud is None:
+                cats = [c for c in cats if c == CAT_VIDEO]
+                if not cats:
+                    messagebox.showwarning(
+                        APP_NAME,
+                        T("Sans les paramètres cloud, il n'y a rien à enregistrer : "
+                          "les catégories choisies en dépendent toutes.\n\nConnecte le "
+                          "compte dans le client Riot, ou coche aussi « Réglages vidéo ».",
+                          "Without cloud settings there is nothing to save: every "
+                          "chosen category depends on them.\n\nLog the account into the "
+                          "Riot Client, or also tick \"Video settings\"."))
+                    return
         try:
-            create_profile(path, name, self.account_names.get(folder, ""), cloud=cloud)
+            create_profile(path, name, self.account_names.get(folder, ""),
+                           cloud=cloud, categories=cats)
         except OSError as e:
             messagebox.showerror(APP_NAME, T(f"Impossible de créer le profil :\n{e}",
                                              f"Could not create the profile:\n{e}"))
@@ -904,37 +962,61 @@ class App(ctk.CTk):
         for old in to_replace:
             shutil.rmtree(old["path"], ignore_errors=True)
         self.refresh()
-        extra = T(" (avec paramètres cloud)", " (with cloud settings)") if cloud \
-            else T(" (local uniquement)", " (local only)")
-        self.set_status(T(f"Profil « {name} » enregistré{extra} ✔",
-                          f"Profile \"{name}\" saved{extra} ✔"), C_GREEN)
+        resume = ", ".join(category_label(c) for c in cats)
+        self.set_status(T(f"Profil « {name} » enregistré — {resume} ✔",
+                          f"Profile \"{name}\" saved — {resume} ✔"), C_GREEN)
 
     # ------------------------------------------------- Application de profil
     def _do_apply(self, prof: dict, target_folder: str | None, tokens: dict | None,
                   cloud: dict | None) -> bool:
-        """Sauvegarde puis applique un profil. Retourne True si OK."""
+        """Sauvegarde puis applique un profil. Retourne True si OK.
+
+        Seules les catégories contenues dans le profil sont appliquées : on relit
+        les réglages cloud actuels du compte connecté, on n'y injecte que ces
+        catégories, puis on réécrit le tout. Le reste du compte (y compris les
+        réglages inconnus) est donc préservé."""
+        cats = profile_categories(prof)
+        cloud_cats = [c for c in cats if c != CAT_VIDEO]
         try:
-            # Les paramètres cloud actuels du compte connecté sont toujours
-            # sauvegardés avant écrasement, même si aucun dossier local ne
-            # correspond à ce compte sur ce PC.
+            # Les réglages cloud actuels servent à la fois de sauvegarde et de
+            # base de fusion. Toujours sauvegardés avant écrasement, même si
+            # aucun dossier local ne correspond au compte sur ce PC.
             backup_cloud = None
+            current = None
             if cloud and tokens:
                 try:
+                    current = riot_cloud.get_cloud_settings(tokens)
                     backup_cloud = {
                         "riot_id": self.connected_riot_id,
                         "subject": tokens.get("subject", ""),
-                        "settings": riot_cloud.get_cloud_settings(tokens),
+                        "settings": current,
                     }
                 except RiotClientError:
                     pass
             if target_folder:
                 target_path = VALO_CONFIG_DIR / target_folder
                 backup_account(target_path, cloud=backup_cloud)
-                apply_files(prof["path"] / "files", target_path)
+                if CAT_VIDEO in cats and (prof["path"] / "files").is_dir():
+                    apply_files(prof["path"] / "files", target_path)
             elif backup_cloud:
                 backup_cloud_only(backup_cloud["subject"], backup_cloud)
-            if cloud and tokens:
-                riot_cloud.put_cloud_settings(tokens, cloud["settings"])
+
+            if cloud and tokens and cloud_cats:
+                if current is None:
+                    raise RiotClientError(T(
+                        "Impossible de lire les réglages actuels du compte — ils sont "
+                        "nécessaires pour n'en remplacer qu'une partie.",
+                        "Could not read the account's current settings — they are "
+                        "needed to replace only part of them."))
+                base = riot_cloud.decode_settings_blob(current.get("data", ""))
+                incoming = riot_cloud.decode_settings_blob(
+                    (cloud.get("settings") or {}).get("data", ""))
+                if base is None or incoming is None:
+                    raise RiotClientError(T("Réglages cloud illisibles.",
+                                            "Unreadable cloud settings."))
+                merged = merge_cloud(base, incoming, cloud_cats)
+                riot_cloud.put_cloud_settings(
+                    tokens, {"data": riot_cloud.encode_settings_blob(merged)})
         except (OSError, RiotClientError) as e:
             messagebox.showerror(APP_NAME,
                                  T(f"Erreur pendant l'application du profil :\n{e}",
@@ -1041,14 +1123,16 @@ class App(ctk.CTk):
                           f"Riot Client.\n\nContinue anyway?")):
                     return
 
-        msg = T(f"Les paramètres actuels de « {label} » vont être remplacés par le "
-                f"profil « {prof['name']} ».",
-                f"The current settings of \"{label}\" will be replaced by the "
-                f"profile \"{prof['name']}\".")
+        cats = profile_categories(prof)
+        liste = "\n".join("• " + category_label(c) for c in cats)
+        msg = T(f"Sur « {label} », seront remplacés uniquement :\n{liste}\n\n"
+                f"Tous les autres réglages de ce compte sont conservés.",
+                f"On \"{label}\", only these will be replaced:\n{liste}\n\n"
+                f"Every other setting of that account is kept.")
         if cloud:
-            msg += T(f"\n\nParamètres cloud inclus — appliqués au compte connecté : "
+            msg += T(f"\n\nLes réglages cloud sont appliqués au compte connecté : "
                      f"{connected_riot_id or '?'}.",
-                     f"\n\nCloud settings included — applied to the logged in account: "
+                     f"\n\nCloud settings are applied to the logged in account: "
                      f"{connected_riot_id or '?'}.")
         msg += T("\n\nUne sauvegarde automatique sera créée avant. Continuer ?",
                  "\n\nAn automatic backup will be created first. Continue?")
@@ -1065,11 +1149,11 @@ class App(ctk.CTk):
             messagebox.showinfo(
                 APP_NAME,
                 T(f"Profil appliqué sur « {label} » ✔\n\n"
-                  "Fichiers locaux + paramètres cloud (crosshair, sensi, keybinds) "
-                  "transférés.\n\nLance Valorant : tout sera chargé automatiquement.",
+                  f"Catégories transférées :\n{liste}\n\n"
+                  "Lance Valorant : tout sera chargé automatiquement.",
                   f"Profile applied to \"{label}\" ✔\n\n"
-                  "Local files + cloud settings (crosshair, sensitivity, keybinds) "
-                  "transferred.\n\nLaunch Valorant: everything will load automatically."))
+                  f"Transferred categories:\n{liste}\n\n"
+                  "Launch Valorant: everything will load automatically."))
         else:
             messagebox.showinfo(
                 APP_NAME,
@@ -1331,19 +1415,19 @@ class App(ctk.CTk):
 
     def profile_details(self, prof: dict):
         lines = []
+        cats = profile_categories(prof)
+        lines.append((T("Contient", "Contains"),
+                      "\n".join("• " + category_label(c) for c in cats)))
+        lines.append((T("À l'application", "When applied"),
+                      T("Seules ces catégories remplaceront les réglages du\n"
+                        "compte cible ; le reste de ce compte est conservé.",
+                        "Only these categories will replace the target account's\n"
+                        "settings; the rest of that account is kept.")))
         src = prof.get("riot_id") or prof.get("source_name") or "?"
         lines.append((T("Compte source", "Source account"), src))
         lines.append((T("Créé le", "Created"), prof.get("created", "?").replace("T", " à " if i18n.LANG == "fr" else " at ")))
         s = profile_summary(prof)
-        if not s.get("cloud"):
-            lines.append((T("Contenu", "Content"),
-                          T("Fichiers locaux uniquement (réglages vidéo).\n"
-                            "Pas de paramètres cloud : crosshair, sensi et\n"
-                            "keybinds ne sont pas dans ce profil.",
-                            "Local files only (video settings).\n"
-                            "No cloud settings: crosshair, sensitivity and\n"
-                            "keybinds are not in this profile.")))
-        else:
+        if s.get("cloud"):
             if "sens" in s:
                 lines.append((T("Sensibilité souris", "Mouse sensitivity"), str(s["sens"])))
             if "ads" in s:

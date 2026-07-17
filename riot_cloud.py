@@ -217,6 +217,20 @@ def decode_settings_blob(data: str) -> dict | None:
         return None
 
 
+def encode_settings_blob(settings: dict) -> str:
+    """Ré-encode des réglages en blob cloud (JSON + deflate brut + base64).
+
+    Exactement l'inverse de decode_settings_blob. Le service Riot stocke ce
+    blob tel quel (il ne le lit pas) ; c'est le jeu qui le décompresse et
+    parse le JSON — la mise en forme du JSON n'a donc pas d'importance, seul
+    son contenu compte. Indispensable pour n'appliquer qu'une partie des
+    réglages : on relit ceux du compte cible, on y injecte la catégorie
+    choisie, et on ré-encode le tout."""
+    raw = json.dumps(settings, ensure_ascii=False).encode("utf-8")
+    comp = zlib.compressobj(wbits=-15)
+    return base64.b64encode(comp.compress(raw) + comp.flush()).decode()
+
+
 def put_cloud_settings(tokens: dict, settings: dict) -> dict:
     """Écrit les paramètres cloud sur le compte CONNECTÉ.
 

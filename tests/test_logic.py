@@ -285,6 +285,150 @@ def test_http_reason():
 # ----------------------------------------------------------------------------
 # Instance unique
 # ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Catégories de réglages
+# ----------------------------------------------------------------------------
+def test_category_for_enum_noms_reels():
+    """Classification vérifiée sur de vrais noms d'enum Valorant."""
+    c = core.category_for_enum
+    assert c("MouseSensitivity") == core.CAT_SENSITIVITY
+    assert c("MouseSensitivityZoomed") == core.CAT_SENSITIVITY
+    # Pièges : contient « Sensitivity » mais c'est de l'audio
+    assert c("MicSensitivityThreshold") == core.CAT_AUDIO
+    # Piège : contient « Video » mais c'est un volume sonore
+    assert c("VideoVolume") == core.CAT_AUDIO
+    assert c("PushToTalkKey") == core.CAT_AUDIO
+    assert c("SavedCrosshairProfileData") == core.CAT_CROSSHAIR
+    assert c("FadeCrosshairWithFiringError") == core.CAT_CROSSHAIR
+    assert c("MinimapZoom") == core.CAT_MINIMAP
+    assert c("ShowBlood") == core.CAT_GAMEPLAY
+    assert c("ColorBlindMode") == core.CAT_GAMEPLAY
+    # Drapeaux d'état du compte : jamais transférés
+    for name in ("HasAcceptedCodeOfConduct", "HasSeenSettingsTutorial",
+                 "HasEverStartedAMatch", "LastSeenAdHocPopup",
+                 "LastAcceptedCodeOfConductVersion", "ContextAwareModuleComplete"):
+        assert c(name) == core.CAT_ACCOUNT, name
+
+
+def _parsed(sens=0.3, blood=True, jump="SpaceBar", vol=1.0, seen=True):
+    return {
+        "floatSettings": [
+            {"settingEnum": "EAresFloatSettingName::MouseSensitivity", "value": sens},
+            {"settingEnum": "EAresFloatSettingName::OverallVolume", "value": vol},
+        ],
+        "boolSettings": [
+            {"settingEnum": "EAresBoolSettingName::ShowBlood", "value": blood},
+            {"settingEnum": "EAresBoolSettingName::HasSeenSettingsTutorial", "value": seen},
+        ],
+        "actionMappings": [
+            {"name": "EAresInputActionName::Jump", "key": f"EKeys::{jump}", "alt": ""},
+        ],
+        "axisMappings": [{"name": "Look", "scale": 1.0}],
+        "roamingSetttingsVersion": 7,
+    }
+
+
+def test_filter_cloud_ne_garde_que_le_choisi():
+    out = core.filter_cloud(_parsed(), [core.CAT_KEYBINDS])
+    assert out["actionMappings"][0]["key"] == "EKeys::SpaceBar"
+    assert "axisMappings" in out
+    # Aucun réglage d'une autre catégorie ne doit être embarqué
+    assert "floatSettings" not in out and "boolSettings" not in out
+
+
+def test_filter_cloud_sensibilite_seule():
+    out = core.filter_cloud(_parsed(), [core.CAT_SENSITIVITY])
+    noms = [core._short_enum(i["settingEnum"]) for i in out["floatSettings"]]
+    assert noms == ["MouseSensitivity"]        # le volume est exclu
+    assert "actionMappings" not in out
+
+
+def test_merge_cloud_ne_remplace_que_le_selectionne():
+    """Le cas d'usage clé : appliquer seulement les touches doit garder tous
+    les autres réglages du compte cible."""
+    cible = _parsed(sens=0.9, blood=False, jump="F", vol=0.2, seen=False)
+    profil = _parsed(sens=0.1, blood=True, jump="SpaceBar", vol=1.0, seen=True)
+    merged = core.merge_cloud(cible, profil, [core.CAT_KEYBINDS])
+
+    # La touche vient du profil
+    assert merged["actionMappings"][0]["key"] == "EKeys::SpaceBar"
+    # Tout le reste reste celui de la CIBLE
+    vals = {core._short_enum(i["settingEnum"]): i["value"]
+            for i in merged["floatSettings"] + merged["boolSettings"]}
+    assert vals["MouseSensitivity"] == 0.9
+    assert vals["OverallVolume"] == 0.2
+    assert vals["ShowBlood"] is False
+    # Les clés inconnues sont préservées
+    assert merged["roamingSetttingsVersion"] == 7
+
+
+def test_merge_cloud_preserve_etat_du_compte():
+    """Même en transférant tout, les drapeaux d'état du compte cible restent."""
+    cible = _parsed(seen=False)
+    profil = _parsed(seen=True)
+    merged = core.merge_cloud(cible, profil, core.CLOUD_CATEGORIES)
+    vals = {core._short_enum(i["settingEnum"]): i["value"] for i in merged["boolSettings"]}
+    assert vals["HasSeenSettingsTutorial"] is False   # celui de la cible
+    assert vals["ShowBlood"] is True                  # celui du profil
+
+
+def test_merge_cloud_sans_doublon():
+    cible = _parsed(sens=0.9)
+    profil = _parsed(sens=0.1)
+    merged = core.merge_cloud(cible, profil, [core.CAT_SENSITIVITY])
+    noms = [core._short_enum(i["settingEnum"]) for i in merged["floatSettings"]]
+    assert noms.count("MouseSensitivity") == 1
+
+
+def test_encode_decode_roundtrip():
+    data = _parsed()
+    assert riot_cloud.decode_settings_blob(riot_cloud.encode_settings_blob(data)) == data
+
+
+def test_profile_categories_retrocompat():
+    # Profil d'avant la fonctionnalité, AVEC cloud : il contenait tout
+    assert core.profile_categories({"name": "vieux", "has_cloud": True}) == \
+        core.CATEGORY_ORDER
+    # Profil d'avant, SANS cloud : il ne contenait que les fichiers vidéo
+    assert core.profile_categories({"name": "vieux", "has_cloud": False}) == \
+        [core.CAT_VIDEO]
+    # Profil récent : le champ fait foi (et l'ordre d'affichage est normalisé)
+    assert core.profile_categories({"categories": ["keybinds", "video"]}) == \
+        [core.CAT_VIDEO, core.CAT_KEYBINDS]
+
+
+def test_create_profile_respecte_les_categories(sandbox):
+    account = core.VALO_CONFIG_DIR / "12345678-1234-1234-1234-123456789abc-eu1"
+    (account / "Windows").mkdir(parents=True)
+    (account / "Windows" / "GameUserSettings.ini").write_text("x", encoding="utf-8")
+    cloud = {"riot_id": "A#B", "subject": "s",
+             "settings": {"data": make_blob(_parsed()), "host": "h"}}
+
+    # Touches seules : pas de fichiers locaux, et le cloud ne garde que les touches
+    pid = core.create_profile(account, "Touches only", "Main", cloud=cloud,
+                              categories=[core.CAT_KEYBINDS])
+    d = core.PROFILES_DIR / pid
+    assert not (d / "files").exists()
+    meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+    assert meta["categories"] == [core.CAT_KEYBINDS]
+    _, parsed = core.load_parsed_cloud(d)
+    assert "actionMappings" in parsed and "floatSettings" not in parsed
+
+
+def test_create_profile_video_seule_sans_cloud(sandbox):
+    account = core.VALO_CONFIG_DIR / "12345678-1234-1234-1234-123456789abc-eu1"
+    (account / "Windows").mkdir(parents=True)
+    (account / "Windows" / "GameUserSettings.ini").write_text("x", encoding="utf-8")
+    cloud = {"riot_id": "A#B", "subject": "s",
+             "settings": {"data": make_blob(_parsed()), "host": "h"}}
+    pid = core.create_profile(account, "Video only", "Main", cloud=cloud,
+                              categories=[core.CAT_VIDEO])
+    d = core.PROFILES_DIR / pid
+    assert (d / "files" / "Windows" / "GameUserSettings.ini").is_file()
+    # Aucune catégorie cloud cochée => pas de cloud.json du tout
+    assert not (d / "cloud.json").exists()
+
+
 def test_single_instance_verrou_et_payload():
     srv = single_instance.acquire()
     assert srv is not None, "la 1re acquisition doit réussir"

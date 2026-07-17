@@ -66,6 +66,11 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
 
 ## Fonctions
 
+- ✅ **Transfert à la carte** : à la sauvegarde, tu choisis les catégories à mettre dans
+  le profil (réglages vidéo, touches, sensibilité, crosshair, audio, minimap,
+  interface & jeu). À l'application, **seules celles-ci remplacent** les réglages du
+  compte cible — tout le reste du compte est conservé. Un profil « Touches » ne change
+  donc que les touches.
 - ⚡ **Transfert express** : applique un profil au compte connecté + lance le jeu, en un clic.
 - 🔄 **Détection de changement de compte** : bannière (et notification) quand un autre
   compte se connecte au client Riot, avec transfert express direct.
