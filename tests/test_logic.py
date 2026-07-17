@@ -19,6 +19,7 @@ import pytest
 import core
 import riot_cloud
 import single_instance
+import updater
 
 
 # ----------------------------------------------------------------------------
@@ -305,6 +306,28 @@ def test_http_reason():
     assert "mise à jour" in riot_cloud._http_reason(403)
     assert "mise à jour" in riot_cloud._http_reason(401)
     assert riot_cloud._http_reason(500) == "HTTP 500"
+
+
+# ----------------------------------------------------------------------------
+# Mises à jour
+# ----------------------------------------------------------------------------
+def test_parse_version():
+    assert updater.parse_version("v1.6.1") == (1, 6, 1)
+    assert updater.parse_version("1.10.0") == (1, 10, 0)
+    assert updater.parse_version("/releases/tag/v2.0.3") == (2, 0, 3)
+    assert updater.parse_version("dev") is None
+    assert updater.parse_version("") is None
+
+
+def test_is_newer():
+    assert updater.is_newer("1.7.0", "1.6.1") is True
+    assert updater.is_newer("2.0.0", "1.9.9") is True
+    assert updater.is_newer("1.10.0", "1.9.0") is True   # pas de tri alphabétique
+    assert updater.is_newer("1.6.1", "1.6.1") is False
+    assert updater.is_newer("1.6.0", "1.6.1") is False
+    # Version locale non numérique (« dev ») : jamais de fausse alerte
+    assert updater.is_newer("1.6.1", "dev") is False
+    assert updater.is_newer("garbage", "1.0.0") is False
 
 
 # ----------------------------------------------------------------------------

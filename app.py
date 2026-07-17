@@ -19,6 +19,7 @@ from PIL import Image
 import i18n
 import riot_cloud
 import theme
+import updater
 from appinfo import (APP_ID, APP_NAME, APP_VERSION, GITHUB_URL, PROFILE_EXT,
                      resource_path)
 from core import (CAT_VIDEO, CATEGORY_ORDER, VALO_CONFIG_DIR, BACKUPS_DIR,
@@ -58,6 +59,7 @@ class App(ctk.CTk):
         self._last_seen_subject = ""    # dernier PUUID vu (pour détecter un changement)
         self._snapshotted = set()       # comptes déjà photographiés cette session
         self._banner = None
+        self._update_banner = None
         self.tray = None
 
         self.report_callback_exception = self._log_tk_exception
@@ -66,6 +68,7 @@ class App(ctk.CTk):
         self._poll_status()
         self._setup_tray()
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
+        self.after(3000, self._check_updates)
 
     def _log_tk_exception(self, exc_type, exc, tb):
         """Journalise les erreurs survenant dans les callbacks Tkinter."""
@@ -75,6 +78,7 @@ class App(ctk.CTk):
         for w in self.winfo_children():
             w.destroy()
         self._banner = None
+        self._update_banner = None
         self._build_header()
         self._build_statusbar()
         self._build_body()
@@ -168,6 +172,73 @@ class App(ctk.CTk):
         if self._banner is not None:
             self._banner.destroy()
             self._banner = None
+
+    # ------------------------------------------------------------ Mises à jour
+    def _check_updates(self):
+        """Vérifie en arrière-plan si une version plus récente est publiée.
+
+        Relancée toutes les 24 h : l'appli vit longtemps dans la barre système."""
+        if self._setting("check_updates", True):
+            def worker():
+                latest = updater.update_available()
+                if latest and latest != self.settings.get("skip_version"):
+                    try:
+                        self.after(0, lambda: self._show_update_banner(latest))
+                    except RuntimeError:
+                        pass
+            threading.Thread(target=worker, daemon=True).start()
+        self.after(24 * 3600 * 1000, self._check_updates)
+
+    def _show_update_banner(self, version: str):
+        if self.state() == "withdrawn" and self.tray is not None:
+            try:
+                self.tray.notify(
+                    T(f"Nouvelle version {version} disponible (tu utilises la "
+                      f"{APP_VERSION}). Ouvre la fenêtre pour télécharger.",
+                      f"New version {version} available (you are on "
+                      f"{APP_VERSION}). Open the window to download."), APP_NAME)
+            except Exception:
+                pass
+        if self._update_banner is not None:
+            return
+        bar = ctk.CTkFrame(self, fg_color="#1e3a2f", corner_radius=0, height=44)
+        bar.pack(fill="x", side="top", before=self.tabs)
+        bar.pack_propagate(False)
+        self._update_banner = bar
+        ctk.CTkLabel(bar, image=icon("refresh", 16, C_GREEN), compound="left",
+                     text=T(f"  Nouvelle version {version} disponible — tu utilises la "
+                            f"{APP_VERSION}.",
+                            f"  New version {version} available — you are on "
+                            f"{APP_VERSION}."),
+                     font=(theme.FONT_UI, 13), text_color=C_TEXT).pack(side="left", padx=14)
+        ctk.CTkButton(bar, text="", image=icon("close", 13, C_TEXT_DIM),
+                      width=32, height=26,
+                      fg_color="transparent", hover_color=C_CARD_HOVER,
+                      command=self._hide_update_banner).pack(side="right", padx=(0, 12))
+        ctk.CTkButton(bar, text=T("Ignorer cette version", "Skip this version"),
+                      width=140, height=28, corner_radius=8,
+                      fg_color="transparent", hover_color=C_CARD_HOVER,
+                      text_color=C_TEXT_DIM, font=(theme.FONT_UI, 11),
+                      command=lambda v=version: self._skip_update(v)).pack(
+            side="right", padx=6)
+        ctk.CTkButton(bar, text=T(" Télécharger", " Download"),
+                      image=icon("import", 14, "#ffffff"), compound="left",
+                      width=140, height=28, corner_radius=8,
+                      fg_color=C_RED, hover_color=C_RED_HOVER,
+                      font=(theme.FONT_UI, 12, "bold"),
+                      command=lambda: webbrowser.open(updater.LATEST_URL)).pack(
+            side="right", padx=8)
+
+    def _hide_update_banner(self):
+        if self._update_banner is not None:
+            self._update_banner.destroy()
+            self._update_banner = None
+
+    def _skip_update(self, version: str):
+        """Ne plus proposer CETTE version (les suivantes seront proposées)."""
+        self.settings["skip_version"] = version
+        save_settings(self.settings)
+        self._hide_update_banner()
 
     def _build_body(self):
         self.tabs = ctk.CTkTabview(
@@ -549,6 +620,14 @@ class App(ctk.CTk):
                      "se connecte au client Riot.",
                      "Shows a banner (and a notification) when another account logs into "
                      "the Riot Client."))
+        toggle_row(body, "check_updates", True,
+                   T("Vérifier les mises à jour", "Check for updates"),
+                   T("Au démarrage (et une fois par jour), prévient si une nouvelle "
+                     "version est disponible sur GitHub. Aucune donnée n'est envoyée : "
+                     "simple lecture de la page des versions.",
+                     "On startup (and once a day), notifies you when a new version is "
+                     "available on GitHub. No data is sent: it only reads the releases "
+                     "page."))
 
         # --- Données -----------------------------------------------------------
         body = card("restore", T("Données", "Data"))

@@ -87,6 +87,9 @@ Profils et sauvegardes sont stockés dans `%LOCALAPPDATA%\ValorantConfigManager\
 - ⚙️ **Onglet Paramètres** : langue FR/EN, réglages de comportement (barre système,
   instantanés automatiques, alerte de changement de compte), accès au dossier de
   données, à propos.
+- 🔄 **Notification de mise à jour** : au lancement (et une fois par jour), l'appli
+  signale les nouvelles versions publiées ici, avec un bouton de téléchargement.
+  Désactivable dans les Paramètres ; aucune donnée envoyée.
 
 <p align="center">
   <img src="docs/screenshot-parametres.png" alt="Onglet Paramètres" width="840">
@@ -104,6 +107,8 @@ Python 3 + CustomTkinter, découpé en modules :
   du client Riot ; l'ancien `playerpreferences.riotgames.com` est mort)
 - `dialogs.py` — boîtes de dialogue personnalisées
 - `single_instance.py` — verrou d'instance unique (socket en boucle locale)
+- `updater.py` — vérification des mises à jour (lecture de la redirection
+  `releases/latest` de GitHub, sans API ni quota)
 - `theme.py` — couleurs, polices, icônes · `i18n.py` — langue FR/EN ·
   `appinfo.py` — métadonnées · `make_icon.py` — génère `icon.ico`
 - `logutil.py` — journal dans `%LOCALAPPDATA%\ValorantConfigManager\logs\vcm.log`
