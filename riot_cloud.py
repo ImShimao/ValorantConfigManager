@@ -69,14 +69,17 @@ def read_lockfile():
     return {"port": parts[2], "password": parts[3], "protocol": parts[4]}
 
 
-def _local_request(path: str):
+def _local_request(path: str, method: str = "GET"):
     info = read_lockfile()
     url = f"{info['protocol']}://127.0.0.1:{info['port']}{path}"
     auth = base64.b64encode(f"riot:{info['password']}".encode()).decode()
-    req = urllib.request.Request(url, headers={"Authorization": f"Basic {auth}"})
+    req = urllib.request.Request(url, method=method,
+                                 data=b"" if method != "GET" else None,
+                                 headers={"Authorization": f"Basic {auth}"})
     try:
         with urllib.request.urlopen(req, context=_SSL_LOCAL, timeout=6) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else None
     except urllib.error.HTTPError as e:
         if e.code in (400, 404, 409):
             raise RiotClientError(
@@ -195,7 +198,21 @@ def find_riot_client() -> Path | None:
 
 
 def launch_riot_client(product: str | None = None) -> bool:
-    """Ouvre le client Riot (ou lance un jeu si `product` est fourni, ex 'valorant')."""
+    """Ouvre le client Riot (ou lance un jeu si `product` est fourni, ex 'valorant').
+
+    Quand le client tourne déjà, relancer l'exe avec --launch-product ne fait
+    que réveiller la fenêtre existante sans démarrer le jeu (clients Riot
+    récents) : on passe alors par son API locale — l'endpoint product-launcher,
+    celui que le client utilise lui-même. L'exe ne sert que si le client est
+    fermé (démarrage à froid, où --launch-product fonctionne)."""
+    if product:
+        try:
+            _local_request(
+                f"/product-launcher/v1/products/{product}/patchlines/live",
+                method="POST")
+            return True
+        except RiotClientError:
+            pass  # client fermé (pas de lockfile) : lancement par l'exe
     exe = find_riot_client()
     if not exe:
         return False

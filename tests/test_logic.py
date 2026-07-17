@@ -429,7 +429,10 @@ def test_create_profile_video_seule_sans_cloud(sandbox):
     assert not (d / "cloud.json").exists()
 
 
-def test_single_instance_verrou_et_payload():
+def test_single_instance_verrou_et_payload(monkeypatch):
+    # Port dédié aux tests : la vraie appli peut tourner en même temps sur le
+    # port officiel sans fausser le résultat.
+    monkeypatch.setattr(single_instance, "_PORT", 49763)
     srv = single_instance.acquire()
     assert srv is not None, "la 1re acquisition doit réussir"
     try:
