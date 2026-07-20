@@ -532,10 +532,19 @@ def test_create_profile_video_seule_sans_cloud(sandbox):
     assert not (d / "cloud.json").exists()
 
 
+def _port_libre() -> int:
+    """Port attribué par l'OS : jamais dans une plage réservée (Hyper-V...),
+    et la vraie appli peut tourner en même temps sur le port officiel."""
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
 def test_single_instance_verrou_et_payload(monkeypatch):
-    # Port dédié aux tests : la vraie appli peut tourner en même temps sur le
-    # port officiel sans fausser le résultat.
-    monkeypatch.setattr(single_instance, "_PORT", 49763)
+    monkeypatch.setattr(single_instance, "_PORT", _port_libre())
     srv = single_instance.acquire()
     assert srv is not None, "la 1re acquisition doit réussir"
     try:
@@ -548,3 +557,29 @@ def test_single_instance_verrou_et_payload(monkeypatch):
         assert recu == ["mon profil.vcmprofile"]
     finally:
         srv.close()
+
+
+def test_signal_primary_refuse_un_service_etranger(monkeypatch):
+    """Si le port est occupé par un AUTRE programme, signal_primary doit
+    répondre False (sinon l'appli refuserait de démarrer pour rien)."""
+    import socket
+    import threading
+    foreign = socket.socket()
+    foreign.bind(("127.0.0.1", 0))
+    foreign.listen(1)
+    monkeypatch.setattr(single_instance, "_PORT", foreign.getsockname()[1])
+
+    def faux_serveur():
+        try:
+            conn, _ = foreign.accept()
+            conn.sendall(b"HTTP/1.0 200 OK\r\n")   # pas notre poignée de main
+            time.sleep(0.3)
+            conn.close()
+        except OSError:
+            pass
+
+    threading.Thread(target=faux_serveur, daemon=True).start()
+    try:
+        assert single_instance.signal_primary("x") is False
+    finally:
+        foreign.close()
