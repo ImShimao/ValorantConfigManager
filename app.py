@@ -1336,9 +1336,14 @@ class App(ctk.CTk):
 
         subject = tokens.get("subject", "")
         target_folder = folder_for_puuid(subject)
-        choices = [(p["id"], p["name"] + ("  (cloud)" if p.get("has_cloud") else
-                                          T("  (local uniquement)", "  (local only)")))
-                   for p in self.profiles]
+
+        def prof_label(p):
+            cats = profile_categories(p)
+            if len(cats) == len(CATEGORY_ORDER):
+                return p["name"] + T("   (tout)", "   (everything)")
+            return p["name"] + "   (" + ", ".join(category_label(c) for c in cats) + ")"
+
+        choices = [(p["id"], prof_label(p)) for p in self.profiles]
         chosen = ChoiceDialog(
             self, T("Transfert express", "Express transfer"),
             T(f"Compte connecté : {riot_id or '?'}\n"

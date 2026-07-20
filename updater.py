@@ -128,6 +128,10 @@ def build_update_script(downloaded: Path, target_exe: Path, pid: int,
         ":waitexit",
         f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul',
         "if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto waitexit)",
+        # Un exe PyInstaller onefile a un processus lanceur parent qui peut
+        # survivre quelques instants au processus principal en gardant le
+        # fichier verrouillé : petite marge avant d'agir.
+        "timeout /t 2 /nobreak >nul",
     ]
     if mode == "installed":
         lines.append(f'"{downloaded}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART')
