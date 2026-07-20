@@ -9,6 +9,7 @@ redirigés vers des dossiers temporaires : rien ne touche aux vraies données.
 import base64
 import json
 import os
+import sys
 import time
 import zipfile
 import zlib
@@ -359,6 +360,8 @@ def test_build_update_script():
     assert 'start ""' not in s
 
 
+@pytest.mark.skipif(sys.platform != "win32",
+                    reason="script batch Windows (cmd)")
 def test_remplacement_portable_reel(tmp_path):
     """Exécute RÉELLEMENT le script batch : l'ancien exe doit être remplacé
     par le nouveau une fois le processus terminé, et le script s'auto-effacer."""

@@ -6,14 +6,16 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # windows-latest : l'appli est Windows-only, et certains tests exercent de
+    # vrais mécanismes Windows (script batch de mise à jour, tasklist...).
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Les tests ne couvrent que la logique (core, riot_cloud) : aucune
-      # dépendance graphique (customtkinter, pystray) n'est nécessaire.
+      # Les tests ne couvrent que la logique (core, riot_cloud, updater...) :
+      # aucune dépendance graphique (customtkinter, pystray) n'est nécessaire.
       - name: Install pytest
         run: pip install pytest
       - name: Run tests
