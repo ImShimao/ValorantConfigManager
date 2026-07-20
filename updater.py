@@ -123,18 +123,38 @@ def build_update_script(downloaded: Path, target_exe: Path, pid: int,
     l'installeur en silencieux (même dossier, mêmes raccourcis) ; mode
     portable → remplace l'exe (avec réessais tant que Windows le verrouille).
     Enfin il relance l'appli et se supprime."""
+    exe_name = Path(target_exe).name
     lines = [
         "@echo off",
+        # Ne surtout pas transmettre le contexte PyInstaller hérité de
+        # l'ancien processus : le bootloader du nouvel exe pourrait chercher
+        # le dossier d'extraction _MEI de l'ANCIENNE instance (supprimé) et
+        # échouer avec « Failed to load Python DLL ».
+        'set "_PYI_APPLICATION_HOME_DIR="',
+        'set "_PYI_ARCHIVE_FILE="',
+        'set "_MEIPASS2="',
         ":waitexit",
         f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul',
         "if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto waitexit)",
-        # Un exe PyInstaller onefile a un processus lanceur parent qui peut
-        # survivre quelques instants au processus principal en gardant le
-        # fichier verrouillé : petite marge avant d'agir.
-        "timeout /t 2 /nobreak >nul",
+        # Le processus principal est fini, mais le lanceur parent PyInstaller
+        # peut survivre un instant en gardant l'exe verrouillé et son dossier
+        # _MEI en cours de nettoyage. On attend que le fichier soit REELLEMENT
+        # libre : un renommage sur place (sans effet) échoue tant qu'un
+        # processus le tient.
+        ":waitfree",
+        f'2>nul ren "{target_exe}" "{exe_name}" || '
+        "(timeout /t 1 /nobreak >nul & goto waitfree)",
+        "timeout /t 1 /nobreak >nul",
     ]
     if mode == "installed":
         lines.append(f'"{downloaded}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART')
+        # L'installeur peut encore tenir le nouvel exe une fraction de
+        # seconde : même attente avant de relancer.
+        lines += [
+            ":waitfree2",
+            f'2>nul ren "{target_exe}" "{exe_name}" || '
+            "(timeout /t 1 /nobreak >nul & goto waitfree2)",
+        ]
         if relaunch:
             lines.append(f'start "" "{target_exe}"')
         lines.append(f'del "{downloaded}"')
@@ -161,5 +181,9 @@ def apply_update(downloaded: Path, mode: str) -> None:
     script.write_text("\r\n".join(lines) + "\r\n", encoding="ascii",
                       errors="replace")
     flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+    # Ceinture et bretelles avec les `set` du script : environnement épuré des
+    # variables du bootloader PyInstaller avant même de lancer le relais.
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("_PYI", "_MEI"))}
     subprocess.Popen(["cmd", "/c", str(script)], creationflags=flags,
-                     close_fds=True)
+                     close_fds=True, env=env)

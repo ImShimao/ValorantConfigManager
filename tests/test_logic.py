@@ -345,15 +345,20 @@ def test_download_url():
 
 def test_build_update_script():
     dl, exe = Path(r"C:\tmp\new.exe"), Path(r"C:\app\vcm.exe")
-    # Portable : attend le processus, remplace avec réessais, relance, s'efface
+    # Portable : attend le processus, attend que l'exe soit libéré (lanceur
+    # PyInstaller), remplace avec réessais, relance, s'efface
     s = "\n".join(updater.build_update_script(dl, exe, 1234, "portable"))
     assert '"PID eq 1234"' in s and "goto waitexit" in s
+    assert 'ren "C:\\app\\vcm.exe" "vcm.exe"' in s and "goto waitfree" in s
     assert 'move /y "C:\\tmp\\new.exe" "C:\\app\\vcm.exe"' in s
     assert "goto replace" in s and 'start "" "C:\\app\\vcm.exe"' in s
     assert 'del "%~f0"' in s
-    # Installé : installeur silencieux, pas de move
+    # L'environnement PyInstaller hérité est purgé avant la relance
+    assert 'set "_PYI_APPLICATION_HOME_DIR="' in s
+    # Installé : installeur silencieux, re-attente post-install, pas de move
     s = "\n".join(updater.build_update_script(dl, exe, 1234, "installed"))
     assert "/VERYSILENT" in s and "move /y" not in s
+    assert "goto waitfree2" in s
     # relaunch=False : ne relance pas
     s = "\n".join(updater.build_update_script(dl, exe, 1234, "portable",
                                               relaunch=False))

@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import threading
+import urllib.parse
 import uuid
 import webbrowser
 import zipfile
@@ -708,12 +709,28 @@ class App(ctk.CTk):
                             "Transfer Valorant configs between Riot accounts."),
                      font=(theme.FONT_UI, 12), text_color=C_TEXT_DIM).pack(
             anchor="w", pady=(0, 8))
-        ctk.CTkButton(body, text=" GitHub", image=icon("globe", 14), compound="left",
-                      width=150, height=30, corner_radius=8,
-                      fg_color=C_CARD, hover_color=C_CARD_HOVER, text_color=C_TEXT,
-                      border_width=1, border_color=C_BORDER,
-                      font=(theme.FONT_UI, 12),
-                      command=lambda: webbrowser.open(GITHUB_URL)).pack(anchor="w")
+        btns = ctk.CTkFrame(body, fg_color="transparent")
+        btns.pack(anchor="w", fill="x")
+        for label, glyph, cmd in (
+                (" GitHub", "globe", lambda: webbrowser.open(GITHUB_URL)),
+                (T(" Signaler un problème", " Report a problem"), "edit",
+                 self._report_bug),
+                (T(" Ouvrir le journal", " Open the log"), "eye",
+                 self._open_log)):
+            ctk.CTkButton(btns, text=label, image=icon(glyph, 14), compound="left",
+                          height=30, corner_radius=8,
+                          fg_color=C_CARD, hover_color=C_CARD_HOVER,
+                          text_color=C_TEXT,
+                          border_width=1, border_color=C_BORDER,
+                          font=(theme.FONT_UI, 12), command=cmd).pack(
+                side="left", padx=(0, 8))
+        ctk.CTkLabel(body,
+                     text=T("Un bug ? « Signaler un problème » ouvre un rapport "
+                            "pré-rempli sur GitHub — joins-y le journal si possible.",
+                            "Found a bug? \"Report a problem\" opens a pre-filled "
+                            "report on GitHub — attach the log if you can."),
+                     font=(theme.FONT_UI, 11), text_color=C_TEXT_DIM,
+                     wraplength=620, justify="left").pack(anchor="w", pady=(8, 0))
 
     def _save_toggle(self, key: str, var):
         self.settings[key] = bool(var.get())
@@ -726,6 +743,34 @@ class App(ctk.CTk):
         except OSError as e:
             messagebox.showerror(APP_NAME, T(f"Impossible d'ouvrir le dossier :\n{e}",
                                              f"Could not open the folder:\n{e}"))
+
+    def _report_bug(self):
+        """Ouvre un nouveau rapport de bug GitHub, pré-rempli avec la version."""
+        body = T(
+            f"**Version :** {APP_VERSION}\n"
+            f"**Windows :** \n\n"
+            "**Description du problème :**\n\n\n"
+            "**Étapes pour reproduire :**\n1. \n2. \n\n"
+            "**Journal :** (Paramètres → À propos → Ouvrir le journal — "
+            "colle ici les dernières lignes si possible)\n",
+            f"**Version:** {APP_VERSION}\n"
+            f"**Windows:** \n\n"
+            "**Problem description:**\n\n\n"
+            "**Steps to reproduce:**\n1. \n2. \n\n"
+            "**Log:** (Settings → About → Open the log — "
+            "paste the last lines here if possible)\n")
+        params = urllib.parse.urlencode({"title": "[Bug] ", "body": body})
+        webbrowser.open(f"{GITHUB_URL}/issues/new?{params}")
+
+    def _open_log(self):
+        log_file = DATA_DIR / "logs" / "vcm.log"
+        try:
+            os.startfile(str(log_file))  # noqa: S606
+        except OSError:
+            messagebox.showinfo(
+                APP_NAME,
+                T(f"Pas encore de journal ({log_file}).",
+                  f"No log yet ({log_file})."))
 
     def _build_statusbar(self):
         bar = ctk.CTkFrame(self, fg_color=C_PANEL, corner_radius=0, height=40)
